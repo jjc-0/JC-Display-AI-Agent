@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite *)",
+      "Bash(npm run *)",
+      "Bash(xargs grep -l \"22C55E\\\\|16a34a\\\\|4ade80\\\\|dcfce7\\\\|f0fdf4\")",
+      "Bash(npm --version)",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(rm -rf \"D:\\\\code\\\\AI_Prompt\\\\frontend-new\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(fuser \"D:\\\\code\\\\AI_Prompt\\\\frontend-new\")",
+      "Bash(powershell *)"
+    ]
+  }
+}

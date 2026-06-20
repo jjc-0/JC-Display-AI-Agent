@@ -1,0 +1,25 @@
+# ========== 密钥文件 ==========
+**/application-secrets.yml
+*.env
+*.env.local
+**/*secret*
+
+# ========== 编译产物 ==========
+backend/target/
+frontend/dist/
+frontend/node_modules/
+
+# ========== IDE ==========
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# ========== OS ==========
+.DS_Store
+Thumbs.db
+
+# ========== OpenClaw 本地数据 ==========
+.openclaw/
