@@ -96,8 +96,32 @@ public class OpenAIProvider implements LLMProvider {
         });
     }
 
+    @Override
+    public CompletableFuture<String> chatCompletionWithToolsAndHistory(String systemPrompt, List<Map<String, String>> messages, List<Map<String, Object>> tools) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                ObjectNode requestBody = buildBaseRequest(systemPrompt);
+                ArrayNode msgs = (ArrayNode) requestBody.get("messages");
+                if (messages != null) {
+                    for (Map<String, String> msg : messages) {
+                        addMessage(msgs, msg.get("role"), msg.get("content"));
+                    }
+                }
+                if (tools != null && !tools.isEmpty()) {
+                    ArrayNode toolsArray = objectMapper.valueToTree(tools);
+                    requestBody.set("tools", toolsArray);
+                    requestBody.put("tool_choice", "auto");
+                }
+                return executeToolRequest(requestBody);
+            } catch (Exception e) {
+                log.error("OpenAI tool call with history error", e);
+                throw new RuntimeException("OpenAI工具调用失败: " + e.getMessage(), e);
+            }
+        });
+    }
+
     /**
-     * 图片识别 — 使用 GPT-4o Vision 能力
+     * 图片识别 — 使用 DeepSeek Vision 多模态能力
      * @param imageBytes 图片字节数据
      * @param mimeType  图片 MIME 类型 (image/jpeg, image/png 等)
      * @param prompt    用户提示词
@@ -105,14 +129,14 @@ public class OpenAIProvider implements LLMProvider {
     public CompletableFuture<String> imageRecognition(byte[] imageBytes, String mimeType, String prompt) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                AIConfig.OpenAIConfig openai = aiConfig.getProviders().getOpenai();
+                AIConfig.DeepSeekConfig ds = aiConfig.getProviders().getDeepseek();
                 String base64 = Base64.getEncoder().encodeToString(imageBytes);
                 String dataUri = "data:" + mimeType + ";base64," + base64;
 
                 ObjectNode requestBody = objectMapper.createObjectNode();
-                requestBody.put("model", openai.getModel());  // 使用配置中的视觉模型
-                requestBody.put("max_tokens", openai.getMaxTokens());
-                requestBody.put("temperature", openai.getTemperature());
+                requestBody.put("model", ds.getModel());
+                requestBody.put("max_tokens", ds.getMaxTokens());
+                requestBody.put("temperature", ds.getTemperature());
 
                 ArrayNode messages = objectMapper.createArrayNode();
                 ObjectNode userMsg = objectMapper.createObjectNode();
@@ -136,25 +160,25 @@ public class OpenAIProvider implements LLMProvider {
                 messages.add(userMsg);
                 requestBody.set("messages", messages);
 
-                String url = openai.getBaseUrl() + "/chat/completions";
+                String url = ds.getBaseUrl() + "/chat/completions";
                 Request request = new Request.Builder()
                         .url(url)
                         .post(RequestBody.create(requestBody.toString(), MediaType.parse("application/json")))
-                        .addHeader("Authorization", "Bearer " + openai.getApiKey())
+                        .addHeader("Authorization", "Bearer " + ds.getApiKey())
                         .addHeader("Content-Type", "application/json")
                         .build();
 
                 try (Response response = httpClient.newCall(request).execute()) {
                     if (!response.isSuccessful()) {
                         String errorBody = response.body() != null ? response.body().string() : "Unknown error";
-                        log.error("OpenAI Vision API error: {} {}", response.code(), errorBody);
+                        log.error("DeepSeek Vision API error: {} {}", response.code(), errorBody);
                         throw new RuntimeException("图片识别失败: " + response.code() + " " + errorBody);
                     }
                     JsonNode root = objectMapper.readTree(response.body().string());
                     return root.path("choices").get(0).path("message").path("content").asText("");
                 }
             } catch (Exception e) {
-                log.error("OpenAI image recognition error", e);
+                log.error("DeepSeek image recognition error", e);
                 throw new RuntimeException("图片识别失败: " + e.getMessage(), e);
             }
         });

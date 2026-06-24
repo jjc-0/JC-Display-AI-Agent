@@ -1,6 +1,6 @@
 package com.ecommerce.agent.controller;
 
-import com.ecommerce.agent.agent.AgentDispatcher;
+import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
 import com.ecommerce.agent.config.AIConfig;
 import com.ecommerce.agent.llm.MultiModelOrchestrator;
@@ -12,7 +12,6 @@ import com.ecommerce.agent.repository.ConversationRecordRepository;
 import com.ecommerce.agent.repository.ConversationSessionRepository;
 import com.ecommerce.agent.repository.KnowledgeDocumentRepository;
 import com.ecommerce.agent.repository.ProductRepository;
-import com.ecommerce.agent.service.DemoResponseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -26,12 +25,11 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/agent")
 public class AgentController {
 
-    private final AgentDispatcher agentDispatcher;
+    private final AgentRuntime agentRuntime;
     private final ConversationManager conversationManager;
     private final MultiModelOrchestrator orchestrator;
     private final AIConfig aiConfig;
     private final PromptTemplateManager promptTemplateManager;
-    private final DemoResponseService demoResponseService;
     private final RAGService ragService;
     private final KnowledgeDocumentRepository knowledgeDocRepo;
     private final ProductRepository productRepo;
@@ -39,24 +37,22 @@ public class AgentController {
     private final ConversationSessionRepository sessionRepo;
     private final KnowledgeBaseLoader knowledgeBaseLoader;
 
-    public AgentController(AgentDispatcher agentDispatcher,
+    public AgentController(AgentRuntime agentRuntime,
                            ConversationManager conversationManager,
                            MultiModelOrchestrator orchestrator,
                            AIConfig aiConfig,
                            PromptTemplateManager promptTemplateManager,
-                           DemoResponseService demoResponseService,
                            RAGService ragService,
                            KnowledgeDocumentRepository knowledgeDocRepo,
                            ProductRepository productRepo,
                         ConversationRecordRepository recordRepo,
                         ConversationSessionRepository sessionRepo,
                         KnowledgeBaseLoader knowledgeBaseLoader) {
-        this.agentDispatcher = agentDispatcher;
+        this.agentRuntime = agentRuntime;
         this.conversationManager = conversationManager;
         this.orchestrator = orchestrator;
         this.aiConfig = aiConfig;
         this.promptTemplateManager = promptTemplateManager;
-        this.demoResponseService = demoResponseService;
         this.ragService = ragService;
         this.knowledgeDocRepo = knowledgeDocRepo;
         this.productRepo = productRepo;
@@ -78,7 +74,7 @@ public class AgentController {
             .enableTools(enableTools)
             .build();
 
-        AgentResponse response = agentDispatcher.dispatch(request);
+        AgentResponse response = agentRuntime.execute(request);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sessionId", response.getSessionId());

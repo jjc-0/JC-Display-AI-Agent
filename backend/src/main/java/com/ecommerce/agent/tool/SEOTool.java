@@ -16,6 +16,9 @@ public class SEOTool implements Tool {
     }
 
     @Override
+    public String getCategory() { return "ANALYSIS"; }
+
+    @Override
     public String getDescription() {
         return "SEO关键词分析工具，分析给定商品关键词的搜索量、竞争度和相关长尾词建议。";
     }

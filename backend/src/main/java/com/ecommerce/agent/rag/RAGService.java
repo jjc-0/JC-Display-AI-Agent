@@ -126,14 +126,20 @@ public class RAGService {
         return hybridSearch.hybridSearch(query, maxResults, aiConfig.getRag().getMinScore(), null);
     }
 
+    private volatile Boolean availabilityCache = null;
+
     public boolean isAvailable() {
+        if (availabilityCache != null) {
+            return availabilityCache;
+        }
         try {
             embeddingModel.embed("test");
-            return true;
+            availabilityCache = true;
         } catch (Exception e) {
             log.warn("RAG嵌入模型不可用: {}", e.getMessage());
-            return false;
+            availabilityCache = false;
         }
+        return availabilityCache;
     }
 
     public String buildAugmentedSystemPrompt(String baseSystemPrompt, String query) {

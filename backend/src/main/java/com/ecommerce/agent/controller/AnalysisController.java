@@ -1,31 +1,30 @@
 package com.ecommerce.agent.controller;
 
-import com.ecommerce.agent.agent.AgentDispatcher;
+import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
 import com.ecommerce.agent.model.AgentRequest;
 import com.ecommerce.agent.model.AgentResponse;
-import com.ecommerce.agent.service.DemoResponseService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/analysis")
 @RequiredArgsConstructor
 public class AnalysisController {
 
-    private final AgentDispatcher agentDispatcher;
+    private final AgentRuntime agentRuntime;
     private final ConversationManager conversationManager;
-    private final DemoResponseService demoResponseService;
 
     @PostMapping("/market")
     public ResponseEntity<Map<String, Object>> analyzeMarket(@RequestBody Map<String, Object> body) {
         String productName = (String) body.getOrDefault("productName", "");
         String targetCountry = (String) body.getOrDefault("targetCountry", "US");
-
         long start = System.currentTimeMillis();
 
         String message = String.format("""
@@ -44,24 +43,21 @@ public class AnalysisController {
             .enableTools(true)
             .build();
 
-        AgentResponse response;
         try {
-            response = agentDispatcher.dispatch(request);
-        } catch (Exception e) {
-            String fallback = demoResponseService.generateAnalysisDemo(productName, targetCountry);
-            String sessionId = conversationManager.createSession("Analysis", "analysis");
+            AgentResponse response = agentRuntime.execute(request);
             return ResponseEntity.ok(Map.of(
-                "sessionId", sessionId,
-                "result", fallback,
+                "sessionId", response.getSessionId(),
+                "result", response.getMessage(),
+                "processingTimeMs", response.getProcessingTimeMs()
+            ));
+        } catch (Exception e) {
+            log.error("市场分析失败", e);
+            return ResponseEntity.ok(Map.of(
+                "sessionId", "",
+                "result", "分析服务暂时不可用: " + e.getMessage(),
                 "processingTimeMs", System.currentTimeMillis() - start
             ));
         }
-
-        return ResponseEntity.ok(Map.of(
-            "sessionId", response.getSessionId(),
-            "result", response.getMessage(),
-            "processingTimeMs", response.getProcessingTimeMs()
-        ));
     }
 
     @GetMapping("/tools")
@@ -80,7 +76,6 @@ public class AnalysisController {
         String url = (String) body.getOrDefault("url", "");
         String keywords = (String) body.getOrDefault("keywords", "");
         String targetCountry = (String) body.getOrDefault("targetCountry", "US");
-
         long start = System.currentTimeMillis();
 
         String message = String.format("""
@@ -101,24 +96,21 @@ public class AnalysisController {
             .enableTools(true)
             .build();
 
-        AgentResponse response;
         try {
-            response = agentDispatcher.dispatch(request);
-        } catch (Exception e) {
-            String fallback = demoResponseService.generateSEODemo(url, keywords, targetCountry);
-            String sessionId = conversationManager.createSession("SEO Analysis", "analysis");
+            AgentResponse response = agentRuntime.execute(request);
             return ResponseEntity.ok(Map.of(
-                "sessionId", sessionId,
-                "result", fallback,
+                "sessionId", response.getSessionId(),
+                "result", response.getMessage(),
+                "processingTimeMs", response.getProcessingTimeMs()
+            ));
+        } catch (Exception e) {
+            log.error("SEO分析失败", e);
+            return ResponseEntity.ok(Map.of(
+                "sessionId", "",
+                "result", "SEO分析服务暂时不可用: " + e.getMessage(),
                 "processingTimeMs", System.currentTimeMillis() - start
             ));
         }
-
-        return ResponseEntity.ok(Map.of(
-            "sessionId", response.getSessionId(),
-            "result", response.getMessage(),
-            "processingTimeMs", response.getProcessingTimeMs()
-        ));
     }
 
     @PostMapping("/competitor")
@@ -126,7 +118,6 @@ public class AnalysisController {
         String competitorUrl = (String) body.getOrDefault("competitorUrl", "");
         String targetCountry = (String) body.getOrDefault("targetCountry", "US");
         String category = (String) body.getOrDefault("category", "floor_display");
-
         long start = System.currentTimeMillis();
 
         String message = String.format("""
@@ -146,24 +137,20 @@ public class AnalysisController {
             .enableTools(true)
             .build();
 
-        AgentResponse response;
         try {
-            response = agentDispatcher.dispatch(request);
-        } catch (Exception e) {
-            String fallback = demoResponseService.generateCompetitorDemo(competitorUrl, targetCountry);
-            String sessionId = conversationManager.createSession("Competitor Analysis", "analysis");
+            AgentResponse response = agentRuntime.execute(request);
             return ResponseEntity.ok(Map.of(
-                "sessionId", sessionId,
-                "result", fallback,
+                "sessionId", response.getSessionId(),
+                "result", response.getMessage(),
+                "processingTimeMs", response.getProcessingTimeMs()
+            ));
+        } catch (Exception e) {
+            log.error("竞品分析失败", e);
+            return ResponseEntity.ok(Map.of(
+                "sessionId", "",
+                "result", "竞品分析服务暂时不可用: " + e.getMessage(),
                 "processingTimeMs", System.currentTimeMillis() - start
             ));
         }
-
-        return ResponseEntity.ok(Map.of(
-            "sessionId", response.getSessionId(),
-            "result", response.getMessage(),
-            "processingTimeMs", response.getProcessingTimeMs()
-        ));
     }
-
 }

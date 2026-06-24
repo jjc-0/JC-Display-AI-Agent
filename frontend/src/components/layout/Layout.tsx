@@ -1,25 +1,24 @@
-import { NavLink, Outlet } from "react-router-dom"
+import { useState, useEffect, useCallback } from "react"
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import {
   Home,
   MessageSquare,
   Bot,
   Zap,
-  Shield,
   Workflow,
   FileText,
-  Globe,
-  Image,
   Database,
-  PenTool,
-  Star,
-  Link,
-  MessageCircle,
-  TrendingUp,
   Cog,
-  ShoppingBag,
+  Plus,
+  Loader2,
+  Check,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import api from "@/lib/api"
 
 interface NavItem {
   href: string
@@ -34,42 +33,31 @@ interface NavGroup {
   items: NavItem[]
 }
 
+interface SessionItem {
+  sessionId: string
+  title: string
+  type: string
+  messageCount: number
+  updatedAt: string
+}
+
 const navigation: NavGroup[] = [
   {
-    title: "主菜单",
+    title: "功能",
     items: [
-      { href: "/dashboard", label: "数据驾驶舱", icon: <Home size={17} /> },
       { href: "/agent-chat", label: "AI Agent 对话", icon: <MessageSquare size={17} />, badge: "AI", badgeVariant: "purple" },
-      { href: "/agent-square", label: "智能体广场", icon: <Bot size={17} /> },
-      { href: "/agent-execution", label: "Agent 执行中心", icon: <Zap size={17} /> },
     ],
   },
   {
-    title: "智能体",
+    title: "展示",
     items: [
-      { href: "/inquiry", label: "询盘价值评分", icon: <Star size={17} /> },
-      { href: "/copywriting", label: "文案 & 询盘回复", icon: <PenTool size={17} /> },
-      { href: "/translate", label: "多语言翻译", icon: <Globe size={17} /> },
-      { href: "/analysis", label: "市场分析", icon: <TrendingUp size={17} /> },
-      { href: "/image-recognition", label: "AI 智能识图", icon: <Image size={17} />, badge: "Vision", badgeVariant: "blue" },
-      { href: "/product-image", label: "电商产品图", icon: <ShoppingBag size={17} />, badge: "NEW", badgeVariant: "blue" },
-      { href: "/knowledge-base", label: "RAG 知识库", icon: <Database size={17} />, badge: "DB", badgeVariant: "secondary" },
-    ],
-  },
-  {
-    title: "插件",
-    items: [
-      { href: "/templates", label: "Prompt 模板", icon: <FileText size={17} /> },
-    ],
-  },
-  {
-    title: "自动化",
-    items: [
-      { href: "/workflow", label: "Workflow Builder", icon: <Workflow size={17} />, badge: "NEW", badgeVariant: "blue" },
-      { href: "/channels", label: "消息渠道", icon: <MessageCircle size={17} /> },
-      { href: "/api-integration", label: "API 集成", icon: <Link size={17} /> },
-      { href: "/auth-center", label: "应用授权中心", icon: <Shield size={17} /> },
-      { href: "/jc-claw", label: "JC-CLAW 助手", icon: <Cog size={17} />, badge: "JC-CLAW", badgeVariant: "success" },
+      { href: "/agent-square", label: "Agent 编排", icon: <Bot size={17} /> },
+      { href: "/templates", label: "Prompt 迭代", icon: <FileText size={17} /> },
+      { href: "/workflow", label: "工作流", icon: <Workflow size={17} />, badge: "DAG", badgeVariant: "blue" },
+      { href: "/agent-execution", label: "执行监控", icon: <Zap size={17} /> },
+      { href: "/dashboard", label: "数据看板", icon: <Home size={17} /> },
+      { href: "/knowledge-base", label: "知识库", icon: <Database size={17} />, badge: "RAG", badgeVariant: "secondary" },
+      { href: "/jc-claw", label: "JC-CLAW", icon: <Cog size={17} />, badge: "JC", badgeVariant: "success" },
     ],
   },
 ]
@@ -82,9 +70,62 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
       : "text-muted-foreground hover:bg-muted hover:text-foreground"
   )
 
-const SIDEBAR_W = 240
+const SIDEBAR_W = 256
+const MAX_SESSIONS = 10
 
 export default function Layout() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  // Session history state
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState("")
+
+  const fetchSessions = useCallback(async () => {
+    setLoadingSessions(true)
+    try {
+      const { data } = await api.get("/agent/sessions")
+      const list: SessionItem[] = data.sessions || []
+      setSessions(list.slice(0, MAX_SESSIONS))
+    } catch {} finally {
+      setLoadingSessions(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchSessions() }, [fetchSessions, location.pathname])
+
+  const timeAgo = (d: string) => {
+    if (!d) return ""
+    const diff = Date.now() - new Date(d).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return "刚刚"
+    if (mins < 60) return `${mins}分钟前`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}小时前`
+    return `${Math.floor(hours / 24)}天前`
+  }
+
+  const startEdit = (sid: string, current: string) => {
+    setEditingId(sid)
+    setEditValue(current || "")
+  }
+
+  const saveTitle = async (sid: string) => {
+    if (!editValue.trim()) return
+    try {
+      await api.put(`/agent/session/${sid}/title`, { title: editValue.trim() })
+      setSessions(prev => prev.map(s => s.sessionId === sid ? { ...s, title: editValue.trim() } : s))
+    } catch {} finally {
+      setEditingId(null)
+    }
+  }
+
+  const newChat = () => navigate("/agent-chat")
+
+  const currentSessionId = new URLSearchParams(location.search).get("session")
+
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "#F8F9FB" }}>
       {/* Sidebar */}
@@ -118,7 +159,80 @@ export default function Layout() {
             paddingRight: 12,
           }}
         >
-          {navigation.map((group) => (
+          {/* ══ 功能导航 ══ */}
+          {navigation.filter(g => g.title === "功能").map((group) => (
+            <div key={group.title} className="mb-1">
+              <div className="px-3 py-3 pb-2 text-[10px] text-muted-foreground tracking-[1.6px] font-bold uppercase">
+                {group.title}
+              </div>
+              <div className="space-y-0.5">
+                {group.items.map((item) => (
+                  <NavLink key={item.href} to={item.href} className={navLinkClass}>
+                    <span className="flex-shrink-0">{item.icon}</span>
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {item.badge && (
+                      <Badge variant={item.badgeVariant || "default"} className="text-[10px] px-1.5 py-0 h-5">
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* ══ 历史对话 (最多10条) ══ */}
+          <div className="mb-1">
+            <div className="flex items-center justify-between px-3 py-3 pb-2">
+              <span className="text-[10px] text-muted-foreground tracking-[1.6px] font-bold uppercase">
+                历史对话
+              </span>
+              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={newChat} title="新对话">
+                <Plus size={13} className="text-muted-foreground" />
+              </Button>
+            </div>
+            <div className="space-y-0.5">
+              {loadingSessions ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : sessions.length === 0 ? (
+                <p className="text-center text-[11px] text-muted-foreground/50 py-4">暂无历史</p>
+              ) : sessions.map(s => (
+                <div key={s.sessionId} className="group relative">
+                  {editingId === s.sessionId ? (
+                    <div className="px-2 py-1 flex items-center gap-1">
+                      <Input autoFocus value={editValue} onChange={e => setEditValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") saveTitle(s.sessionId); if (e.key === "Escape") setEditingId(null) }}
+                        className="h-6 text-[11px] px-2 py-0" />
+                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => saveTitle(s.sessionId)}><Check size={11} /></Button>
+                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditingId(null)}><X size={11} /></Button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => navigate(`/agent-chat?session=${s.sessionId}`)}
+                      onDoubleClick={e => { e.preventDefault(); startEdit(s.sessionId, s.title) }}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer",
+                        currentSessionId === s.sessionId ? "bg-accent" : "hover:bg-muted"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessageSquare size={12} className="text-muted-foreground flex-shrink-0" />
+                        <span className="text-[11px] font-medium truncate flex-1">{s.title || "未命名"}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 pl-5">
+                        <span className="text-[10px] text-muted-foreground">{timeAgo(s.updatedAt)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ══ 展示导航 ══ */}
+          {navigation.filter(g => g.title === "展示").map((group) => (
             <div key={group.title} className="mb-1">
               <div className="px-3 py-3 pb-2 text-[10px] text-muted-foreground tracking-[1.6px] font-bold uppercase">
                 {group.title}
@@ -164,7 +278,6 @@ export default function Layout() {
           overflow: "hidden",
         }}
       >
-        {/* Page content */}
         <div
           style={{
             flex: "1 1 0",
@@ -174,23 +287,6 @@ export default function Layout() {
           }}
         >
           <Outlet />
-        </div>
-
-        {/* Copyright Footer */}
-        <div
-          style={{
-            flexShrink: 0,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            padding: "8px 16px",
-            borderTop: "1px solid #EAECF0",
-            background: "#FFFFFF",
-          }}
-        >
-          <span className="text-[11px] text-muted-foreground/50">
-            &copy; 2026 深圳市杰创包装展示有限公司（Shenzhen JC Display Ltd.）
-          </span>
         </div>
       </main>
     </div>

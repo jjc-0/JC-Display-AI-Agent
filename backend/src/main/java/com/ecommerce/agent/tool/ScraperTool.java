@@ -24,6 +24,9 @@ public class ScraperTool implements Tool {
     }
 
     @Override
+    public String getCategory() { return "INFO"; }
+
+    @Override
     public String getDescription() {
         return "网页内容抓取工具，用于抓取商品页面信息、价格、评价等。输入URL，返回页面结构化信息。";
     }

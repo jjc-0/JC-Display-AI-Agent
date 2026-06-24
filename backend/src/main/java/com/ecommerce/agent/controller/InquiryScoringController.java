@@ -1,16 +1,16 @@
 package com.ecommerce.agent.controller;
 
-import com.ecommerce.agent.agent.AgentDispatcher;
+import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
 import com.ecommerce.agent.model.AgentRequest;
 import com.ecommerce.agent.model.AgentResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 @RestController
@@ -18,7 +18,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InquiryScoringController {
 
-    private final AgentDispatcher agentDispatcher;
+    private final AgentRuntime agentRuntime;
     private final ConversationManager conversationManager;
 
     @PostMapping("/score")
@@ -63,12 +63,10 @@ public class InquiryScoringController {
             .enableTools(false)
             .build();
 
-        AgentResponse response;
         try {
-            response = agentDispatcher.dispatch(request);
+            AgentResponse response = agentRuntime.execute(request);
             String resultText = response.getMessage();
 
-            // Try to parse JSON from response (it might be wrapped in markdown)
             Map<String, Object> parsed = parseInquiryResult(resultText);
             parsed.put("sessionId", response.getSessionId());
             parsed.put("processingTimeMs", response.getProcessingTimeMs());
@@ -78,17 +76,16 @@ public class InquiryScoringController {
             return ResponseEntity.ok(parsed);
 
         } catch (Exception e) {
-            log.error("Inquiry scoring failed", e);
-            int fallbackScore = 40 + (int)(Math.random() * 50);
+            log.error("询盘评分失败", e);
             Map<String, Object> fallback = new LinkedHashMap<>();
-            fallback.put("sessionId", conversationManager.createSession("Inquiry Scoring", "inquiry"));
-            fallback.put("score", fallbackScore);
-            fallback.put("intent", "产品咨询");
-            fallback.put("buyerStage", "初步意向");
+            fallback.put("sessionId", "");
+            fallback.put("score", 0);
+            fallback.put("intent", "未知");
+            fallback.put("buyerStage", "未知");
             fallback.put("quantity", "未明确");
             fallback.put("urgency", "中");
-            fallback.put("reason", "AI 服务暂时不可用，显示为预估评分。");
-            fallback.put("suggestedReply", "建议等待 AI 服务恢复后重新分析，或手动评估询盘。");
+            fallback.put("reason", "AI 服务暂时不可用: " + e.getMessage());
+            fallback.put("suggestedReply", "请稍后重试。");
             fallback.put("processingTimeMs", System.currentTimeMillis() - start);
             fallback.put("customerName", customerName);
             fallback.put("customerCountry", customerCountry);
@@ -99,8 +96,6 @@ public class InquiryScoringController {
 
     private Map<String, Object> parseInquiryResult(String text) {
         Map<String, Object> result = new LinkedHashMap<>();
-
-        // Defaults
         result.put("score", 50);
         result.put("intent", "产品咨询");
         result.put("buyerStage", "初步意向");
@@ -112,7 +107,6 @@ public class InquiryScoringController {
         if (text == null || text.isEmpty()) return result;
 
         try {
-            // Try direct JSON parse (strip markdown if any)
             String jsonStr = text.trim();
             if (jsonStr.startsWith("```")) {
                 int start = jsonStr.indexOf("{");
@@ -122,7 +116,7 @@ public class InquiryScoringController {
                 }
             }
 
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            ObjectMapper mapper = new ObjectMapper();
             @SuppressWarnings("unchecked")
             Map<String, Object> parsed = mapper.readValue(jsonStr, Map.class);
 

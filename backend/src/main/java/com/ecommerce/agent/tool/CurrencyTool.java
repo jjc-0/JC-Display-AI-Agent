@@ -26,6 +26,9 @@ public class CurrencyTool implements Tool {
     }
 
     @Override
+    public String getCategory() { return "INFO"; }
+
+    @Override
     public String getDescription() {
         return "汇率换算工具，支持多种货币之间的汇率转换。输入源货币和目标货币代码，返回实时汇率和换算结果。";
     }

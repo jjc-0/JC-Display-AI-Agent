@@ -1,25 +1,23 @@
 package com.ecommerce.agent.controller;
 
-import com.ecommerce.agent.agent.AgentDispatcher;
+import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
-import com.ecommerce.agent.llm.PromptTemplateManager;
 import com.ecommerce.agent.model.*;
-import com.ecommerce.agent.service.DemoResponseService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/copywriting")
 @RequiredArgsConstructor
 public class CopywritingController {
 
-    private final AgentDispatcher agentDispatcher;
+    private final AgentRuntime agentRuntime;
     private final ConversationManager conversationManager;
-    private final DemoResponseService demoResponseService;
 
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generate(@RequestBody Map<String, Object> body) {
@@ -40,26 +38,23 @@ public class CopywritingController {
             .enableTools(false)
             .build();
 
-        AgentResponse response;
         try {
-            response = agentDispatcher.dispatch(request);
-        } catch (Exception e) {
-            String fallback = demoResponseService.generateCopywritingDemo(productName, sellingPoints, platform, targetCountry);
-            String sessionId = conversationManager.createSession("Copywriting", "copywriting");
+            AgentResponse response = agentRuntime.execute(request);
             return ResponseEntity.ok(Map.of(
-                "sessionId", sessionId,
-                "result", fallback,
-                "model", "demo-mode",
+                "sessionId", response.getSessionId(),
+                "result", response.getMessage(),
+                "model", response.getModelUsed(),
+                "processingTimeMs", response.getProcessingTimeMs()
+            ));
+        } catch (Exception e) {
+            log.error("文案生成失败", e);
+            return ResponseEntity.ok(Map.of(
+                "sessionId", "",
+                "result", "文案生成服务暂时不可用: " + e.getMessage(),
+                "model", "error",
                 "processingTimeMs", System.currentTimeMillis() - start
             ));
         }
-
-        return ResponseEntity.ok(Map.of(
-            "sessionId", response.getSessionId(),
-            "result", response.getMessage(),
-            "model", response.getModelUsed(),
-            "processingTimeMs", response.getProcessingTimeMs()
-        ));
     }
 
     @PostMapping("/generate/collaborative")

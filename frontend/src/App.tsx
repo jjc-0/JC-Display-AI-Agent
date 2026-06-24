@@ -23,7 +23,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="/agent-chat" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="agent-chat" element={<AgentChat />} />
           <Route path="agent-square" element={<AgentSquare />} />
@@ -41,7 +41,7 @@ export default function App() {
           <Route path="workflow" element={<WorkflowBuilder />} />
           <Route path="jc-claw" element={<JCClaw />} />
           <Route path="product-image" element={<ProductImage />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/agent-chat" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -1,6 +1,6 @@
 package com.ecommerce.agent.service;
 
-import com.ecommerce.agent.agent.AgentDispatcher;
+import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
 import com.ecommerce.agent.model.AgentRequest;
 import com.ecommerce.agent.model.AgentResponse;
@@ -16,6 +16,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * 微信 Bot 消息服务 — v2
+ *
+ * 接入 AgentRuntime，微信用户消息 → Agent 自主决策 → 工具调用 → 回复。
+ * 同时暴露 sendMessage/getActiveUsers 供 WeChatTool 调用。
+ */
 @Slf4j
 @Service
 public class WeChatBotService {
@@ -26,7 +32,8 @@ public class WeChatBotService {
 
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private final AgentDispatcher agentDispatcher;
+
+    private final AgentRuntime agentRuntime;
     private final ConversationManager conversationManager;
 
     private Thread pollThread;
@@ -37,12 +44,20 @@ public class WeChatBotService {
     private String typingTicket;
     private String getUpdatesBuf = "";
 
+    /** fromUserId → sessionId */
     private final Map<String, String> userSessions = new ConcurrentHashMap<>();
 
-    public WeChatBotService(AgentDispatcher agentDispatcher, ConversationManager conversationManager) {
-        this.agentDispatcher = agentDispatcher;
+    /** fromUserId → last activity timestamp */
+    private final Map<String, Long> userLastActive = new ConcurrentHashMap<>();
+
+    public WeChatBotService(AgentRuntime agentRuntime, ConversationManager conversationManager) {
+        this.agentRuntime = agentRuntime;
         this.conversationManager = conversationManager;
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 生命周期
+    // ═══════════════════════════════════════════════════════════════
 
     public synchronized void start(String token, String accountId, String ilinkUserId) {
         if (running) return;
@@ -55,7 +70,7 @@ public class WeChatBotService {
         pollThread = new Thread(this::pollLoop, "wechat-poll");
         pollThread.setDaemon(true);
         pollThread.start();
-        log.info("微信Bot消息轮询已启动");
+        log.info("微信Bot消息轮询已启动(v2 AgentRuntime)");
     }
 
     @PreDestroy
@@ -64,11 +79,69 @@ public class WeChatBotService {
         if (pollThread != null) pollThread.interrupt();
     }
 
+    public boolean isRunning() { return running; }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 公共 API — 供 WeChatTool 调用
+    // ═══════════════════════════════════════════════════════════════
+
+    /** 主动给微信用户发消息 (由 Agent 工具调用) */
+    public boolean sendMessage(String toUserId, String text) {
+        if (!running) return false;
+        try {
+            // 查找该用户的 contextToken (从最近消息中获取)
+            String sessionId = userSessions.get(toUserId);
+            String contextToken = null;
+            if (sessionId != null) {
+                var history = conversationManager.getDBHistory(sessionId);
+                if (history != null && !history.isEmpty()) {
+                    contextToken = history.get(history.size() - 1).getContent();
+                }
+            }
+
+            sendIlinkMessage(toUserId, text, contextToken);
+            return true;
+        } catch (Exception e) {
+            log.error("微信发送失败 to={}: {}", toUserId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** 获取最近活跃的微信用户列表 */
+    public List<Map<String, Object>> getActiveUsers() {
+        List<Map<String, Object>> users = new ArrayList<>();
+        long now = System.currentTimeMillis();
+
+        for (var entry : userLastActive.entrySet()) {
+            String uid = entry.getKey();
+            Map<String, Object> u = new LinkedHashMap<>();
+            u.put("user_id", uid);
+            u.put("last_active", entry.getValue());
+            u.put("minutes_ago", (now - entry.getValue()) / 60000);
+
+            String sid = userSessions.get(uid);
+            if (sid != null) {
+                u.put("session_id", sid);
+                u.put("message_count", conversationManager.getHistory(uid).size());
+            }
+            users.add(u);
+        }
+
+        users.sort((a, b) -> Long.compare(
+                (Long) b.getOrDefault("last_active", 0L),
+                (Long) a.getOrDefault("last_active", 0L)));
+        return users;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 消息轮询
+    // ═══════════════════════════════════════════════════════════════
+
     private void pollLoop() {
         while (running) {
             try {
                 List<Map<String, Object>> messages = fetchUpdates();
-                if (!messages.isEmpty()) log.info("[微信轮询] 收到 {} 条新消息", messages.size());
+                if (!messages.isEmpty()) log.info("[微信] 收到 {} 条", messages.size());
                 for (Map<String, Object> msg : messages) processMessage(msg);
             } catch (InterruptedException e) { break;
             } catch (Exception e) { log.warn("轮询异常: {}", e.getMessage()); try { Thread.sleep(3000); } catch (InterruptedException ie) { break; } }
@@ -82,22 +155,21 @@ public class WeChatBotService {
         body.put("base_info", baseInfo());
 
         HttpRequest req = request("ilink/bot/getupdates", body, 40);
-
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() != 200) {
-            log.warn("[getupdates] HTTP {} body: {}", resp.statusCode(), resp.body().substring(0, Math.min(200, resp.body().length())));
+            log.warn("[getupdates] HTTP {} : {}", resp.statusCode(),
+                    resp.body().substring(0, Math.min(200, resp.body().length())));
         }
         Map<String, Object> data = objectMapper.readValue(resp.body(), Map.class);
 
         Object ret = data.get("ret");
-        if (ret instanceof Number n && n.intValue() != 0) {
-            log.warn("[getupdates] API ret={}", ret);
-        }
+        if (ret instanceof Number n && n.intValue() != 0) log.warn("[getupdates] ret={}", ret);
+
         Object errcode = data.get("errcode");
         if (errcode instanceof Number n && n.intValue() != 0) {
-            log.warn("[getupdates] API错误: errcode={}, errmsg={}", errcode, data.get("errmsg"));
+            log.warn("[getupdates] errcode={} msg={}", errcode, data.get("errmsg"));
             if (n.intValue() == -14) {
-                log.warn("微信 Bot 会话已过期，停止轮询，需重新扫码绑定");
+                log.warn("微信 Bot 会话已过期，停止轮询");
                 running = false;
             }
         }
@@ -134,37 +206,37 @@ public class WeChatBotService {
             log.info("[微信] {}: {}", fromUserId, text);
 
             String contextToken = toString(msg.get("context_token"));
+            userLastActive.put(fromUserId, System.currentTimeMillis());
 
-            String sessionId = userSessions.computeIfAbsent(fromUserId, k -> {
-                String sid = "wx_" + fromUserId.substring(0, Math.min(8, fromUserId.length()));
-                String title = "微信 · " + fromUserId.substring(0, Math.min(8, fromUserId.length()));
-                return conversationManager.createSession(sid, title, "wechat");
-            });
-
-            AgentRequest req = AgentRequest.builder()
-                    .sessionId(sessionId)
-                    .message(text)
-                    .taskType("chat")
-                    .enableTools(true)
-                    .build();
-
-            // 未获取 typing_ticket 则用消息的 context_token 获取并缓存
+            // 获取 typing_ticket
             if (typingTicket == null && ilinkUserId != null && !ilinkUserId.isBlank()
                     && contextToken != null && !contextToken.isBlank()) {
                 fetchTypingTicket(contextToken);
             }
 
-            // 显示"正在输入"状态
+            // 创建/获取 session
+            String sessionId = userSessions.computeIfAbsent(fromUserId, k -> {
+                String sid = "wx_" + k;
+                return conversationManager.createSession(sid, "微信:" + k, "wechat");
+            });
+
+            // ═══ v2: 使用 AgentRuntime 替代 AgentDispatcher ═══
+            AgentRequest req = AgentRequest.builder()
+                    .sessionId(sessionId)
+                    .message(text)
+                    .taskType("wechat")
+                    .enableTools(true)
+                    .build();
+
             sendTyping(true);
             try {
-                AgentResponse agentResp = agentDispatcher.dispatch(req);
+                AgentResponse agentResp = agentRuntime.execute(req);
                 String reply = agentResp.getMessage();
                 if (reply == null || reply.isBlank()) reply = "智能体暂无响应";
 
                 log.info("[微信回复] {}", reply.substring(0, Math.min(80, reply.length())));
-                sendMessage(fromUserId, reply, contextToken);
+                sendIlinkMessage(fromUserId, reply, contextToken);
             } finally {
-                // 取消"正在输入"状态
                 sendTyping(false);
             }
 
@@ -173,7 +245,11 @@ public class WeChatBotService {
         }
     }
 
-    private void sendMessage(String toUserId, String text, String contextToken) throws Exception {
+    // ═══════════════════════════════════════════════════════════════
+    // iLink API 通信
+    // ═══════════════════════════════════════════════════════════════
+
+    private void sendIlinkMessage(String toUserId, String text, String contextToken) throws Exception {
         Map<String, Object> textItem = new LinkedHashMap<>();
         textItem.put("type", 1);
         textItem.put("text_item", Map.of("text", text));
@@ -196,13 +272,13 @@ public class WeChatBotService {
         HttpRequest req = request("ilink/bot/sendmessage", body, 15);
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() != 200) {
-            log.warn("[sendmessage] HTTP {} body: {}", resp.statusCode(), resp.body().substring(0, Math.min(200, resp.body().length())));
+            log.warn("[sendmessage] HTTP {} : {}", resp.statusCode(),
+                    resp.body().substring(0, Math.min(200, resp.body().length())));
         } else {
             log.info("[微信发送成功] {}", text.substring(0, Math.min(50, text.length())));
         }
     }
 
-    /** 获取 typing_ticket（需要 context_token） */
     private void fetchTypingTicket(String contextToken) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
@@ -220,7 +296,7 @@ public class WeChatBotService {
                     this.typingTicket = ticket;
                     log.info("typing_ticket 获取成功");
                 } else {
-                    log.warn("getConfig 无 typing_ticket, 返回字段: {}", data.keySet());
+                    log.warn("getConfig 缺少 typing_ticket, 字段: {}", data.keySet());
                 }
             } else {
                 log.warn("[getconfig] HTTP {}", resp.statusCode());
@@ -230,20 +306,23 @@ public class WeChatBotService {
         }
     }
 
-    /** 发送/取消"正在输入"状态，对齐官方 iLink sendTyping 接口 */
     private void sendTyping(boolean typing) {
         if (ilinkUserId == null || typingTicket == null) return;
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("ilink_user_id", ilinkUserId);
             body.put("typing_ticket", typingTicket);
-            body.put("status", typing ? 1 : 2);  // 1=正在输入, 2=取消
+            body.put("status", typing ? 1 : 2);
             body.put("base_info", baseInfo());
 
             HttpRequest req = request("ilink/bot/sendtyping", body, 5);
             httpClient.send(req, HttpResponse.BodyHandlers.discarding());
         } catch (Exception ignored) {}
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Helpers
+    // ═══════════════════════════════════════════════════════════════
 
     private HttpRequest request(String endpoint, Map<String, Object> body, long timeoutSec) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder()
@@ -282,6 +361,4 @@ public class WeChatBotService {
     private static String toString(Object o) {
         return o instanceof String s ? s : o != null ? o.toString() : "";
     }
-
-    public boolean isRunning() { return running; }
 }

@@ -33,9 +33,9 @@ spring:
 ai:
   providers:
     openai:
-      api-key: ${OPENAI_API_KEY:sk-placeholder}
-      base-url: ${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-      model: ${OPENAI_MODEL:qwen3.7-plus}
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
+      model: ${DEEPSEEK_MODEL:deepseek-chat}
       max-tokens: 4096
       temperature: 0.7
     deepseek:

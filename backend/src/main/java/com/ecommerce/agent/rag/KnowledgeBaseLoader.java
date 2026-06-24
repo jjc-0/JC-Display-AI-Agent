@@ -54,7 +54,14 @@ public class KnowledgeBaseLoader {
     @PostConstruct
     public void init() {
         seedDefaultDocuments();
-        doLoad();
+        // 异步构建向量索引，避免阻塞应用启动（866 个产品嵌入耗时较长）
+        new Thread(() -> {
+            try {
+                doLoad();
+            } catch (Exception e) {
+                log.error("知识库向量索引构建失败", e);
+            }
+        }, "kb-loader").start();
     }
 
     /**
@@ -122,23 +129,28 @@ public class KnowledgeBaseLoader {
             allSegments.addAll(smartChunker.chunk(fallbackDocs, "knowledge"));
         }
 
-        // 4. 向量化 & 写入 EmbeddingStore（直接写入，跳过 Ingestor 的重复分块）
-        // 先清旧索引（InMemoryEmbeddingStore 需重建 — 用新实例替换）
-        // 简单方式：逐个 embed + add
+        // 4. 向量化 & 写入 EmbeddingStore — 仅向量化知识文档
+        // 产品数据(866条)不纳入向量索引：量大烧钱、且产品搜索走 /api/agent/knowledge/products 接口即可
+        int embeddedCount = 0;
         for (TextSegment segment : allSegments) {
+            String source = segment.metadata() != null ? segment.metadata().getString("source") : null;
+            if ("products".equals(source)) {
+                continue; // 跳过产品，不调用Embedding API
+            }
             try {
                 var embedding = embeddingModel.embed(segment.text());
                 if (embedding != null && embedding.content() != null) {
                     embeddingStore.add(embedding.content(), segment);
+                    embeddedCount++;
                 }
             } catch (Exception e) {
-                log.warn("向量化失败: {}", e.getMessage());
+                log.warn("向量化失败 (source={}): {}", source, e.getMessage());
             }
         }
 
         long elapsed = System.currentTimeMillis() - start;
-        log.info("知识库向量索引构建完成: {} 个片段, 来源={} 篇知识文档 + {} 个产品, 耗时 {}ms",
-                allSegments.size(), knowledgeDocs.size(), products.size(), elapsed);
+        log.info("知识库向量索引构建完成: {} 知识片段向量化 + {} 产品跳过, 耗时 {}ms",
+                embeddedCount, products.size(), elapsed);
     }
 
     // ---- 辅助方法 ----

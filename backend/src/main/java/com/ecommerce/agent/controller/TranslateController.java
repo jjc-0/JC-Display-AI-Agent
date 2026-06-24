@@ -1,24 +1,24 @@
 package com.ecommerce.agent.controller;
 
-import com.ecommerce.agent.agent.AgentDispatcher;
+import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
 import com.ecommerce.agent.model.AgentRequest;
 import com.ecommerce.agent.model.AgentResponse;
-import com.ecommerce.agent.service.DemoResponseService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/translate")
 @RequiredArgsConstructor
 public class TranslateController {
 
-    private final AgentDispatcher agentDispatcher;
+    private final AgentRuntime agentRuntime;
     private final ConversationManager conversationManager;
-    private final DemoResponseService demoResponseService;
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> translate(@RequestBody Map<String, Object> body) {
@@ -50,23 +50,20 @@ public class TranslateController {
             .enableTools(false)
             .build();
 
-        AgentResponse response;
         try {
-            response = agentDispatcher.dispatch(request);
-        } catch (Exception e) {
-            String fallback = demoResponseService.generateTranslationDemo(text, sourceLanguage, targetLanguage);
-            String sessionId = conversationManager.createSession("Translation", "translate");
+            AgentResponse response = agentRuntime.execute(request);
             return ResponseEntity.ok(Map.of(
-                "sessionId", sessionId,
-                "result", fallback,
+                "sessionId", response.getSessionId(),
+                "result", response.getMessage(),
+                "processingTimeMs", response.getProcessingTimeMs()
+            ));
+        } catch (Exception e) {
+            log.error("翻译失败", e);
+            return ResponseEntity.ok(Map.of(
+                "sessionId", "",
+                "result", "翻译服务暂时不可用: " + e.getMessage(),
                 "processingTimeMs", System.currentTimeMillis() - start
             ));
         }
-
-        return ResponseEntity.ok(Map.of(
-            "sessionId", response.getSessionId(),
-            "result", response.getMessage(),
-            "processingTimeMs", response.getProcessingTimeMs()
-        ));
     }
 }

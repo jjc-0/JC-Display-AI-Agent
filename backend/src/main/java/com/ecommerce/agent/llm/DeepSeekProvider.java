@@ -95,6 +95,30 @@ public class DeepSeekProvider implements LLMProvider {
         });
     }
 
+    @Override
+    public CompletableFuture<String> chatCompletionWithToolsAndHistory(String systemPrompt, List<Map<String, String>> messages, List<Map<String, Object>> tools) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                ObjectNode requestBody = buildBaseRequest(systemPrompt);
+                ArrayNode msgs = (ArrayNode) requestBody.get("messages");
+                if (messages != null) {
+                    for (Map<String, String> msg : messages) {
+                        addMessage(msgs, msg.get("role"), msg.get("content"));
+                    }
+                }
+                if (tools != null && !tools.isEmpty()) {
+                    ArrayNode toolsArray = objectMapper.valueToTree(tools);
+                    requestBody.set("tools", toolsArray);
+                    requestBody.put("tool_choice", "auto");
+                }
+                return executeToolRequest(requestBody);
+            } catch (Exception e) {
+                log.error("DeepSeek tool call with history error", e);
+                throw new RuntimeException("DeepSeek工具调用失败: " + e.getMessage(), e);
+            }
+        });
+    }
+
     private ObjectNode buildBaseRequest(String systemPrompt) {
         ObjectNode requestBody = objectMapper.createObjectNode();
         AIConfig.DeepSeekConfig deepseek = aiConfig.getProviders().getDeepseek();

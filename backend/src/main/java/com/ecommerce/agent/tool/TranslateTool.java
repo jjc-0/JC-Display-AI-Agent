@@ -35,6 +35,9 @@ public class TranslateTool implements Tool {
     }
 
     @Override
+    public String getCategory() { return "GENERATION"; }
+
+    @Override
     public String getDescription() {
         return "多语言翻译工具，支持中英日韩法等语言互译。特别优化电商场景（商品标题、描述本地化）。";
     }

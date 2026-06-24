@@ -32,6 +32,9 @@ public class SearchTool implements Tool {
     }
 
     @Override
+    public String getCategory() { return "INFO"; }
+
+    @Override
     public String getDescription() {
         return "网络搜索工具，用于搜索商品信息、市场价格、竞品分析等。输入搜索关键词，返回搜索结果摘要。";
     }

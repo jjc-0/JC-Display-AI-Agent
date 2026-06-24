@@ -11,16 +11,16 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * RAG 配置
- * - EmbeddingModel: DashScope text-embedding-v1（兼容 OpenAI API，1024维）
+ * - EmbeddingModel: DeepSeek API（OpenAI 兼容格式，尝试 /v1/embeddings）
  * - EmbeddingStore: 内存存储（启动时从 MySQL 重建）
  */
 @Configuration
 public class RAGConfig {
 
-    @Value("${OPENAI_API_KEY:sk-placeholder}")
+    @Value("${DEEPSEEK_API_KEY:sk-placeholder}")
     private String apiKey;
 
-    @Value("${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}")
+    @Value("${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}")
     private String baseUrl;
 
     @Bean
@@ -28,7 +28,8 @@ public class RAGConfig {
         return OpenAiEmbeddingModel.builder()
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
-                .modelName("text-embedding-v1")
+                .modelName("text-embedding-v2")
+                .maxRetries(1)
                 .build();
     }
 
