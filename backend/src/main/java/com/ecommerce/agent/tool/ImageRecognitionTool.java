@@ -46,7 +46,8 @@ public class ImageRecognitionTool implements Tool {
 
     @Override
     public String getDescription() {
-        return "AI视觉识别工具（DeepSeek多模态）。分析图片内容——产品特征、颜色、材质、竞品包装、生产工艺等。支持JPG/PNG/GIF/WebP。可通过数字索引(0,1,2...)引用用户上传的图片。";
+        return "仅当用户明确要求分析图片时才调用。对图片内容进行识别——产品特征、颜色、材质等。" +
+                "支持JPG/PNG。可通过数字索引(0,1,2...)引用用户上传的图片。注意：用户仅发送图片不等于要求识图。";
     }
 
     @Override

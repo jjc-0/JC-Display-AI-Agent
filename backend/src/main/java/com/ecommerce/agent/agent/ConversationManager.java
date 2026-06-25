@@ -166,9 +166,10 @@ public class ConversationManager {
             try {
                 List<ConversationRecord> records = recordRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
                 if (!records.isEmpty()) {
-                    List<ConversationMessage> messages = new ArrayList<>();
+                    // 从 DB 恢复 → 同时填充内存 deque（避免 addMessage 覆盖）
+                    Deque<ConversationMessage> restored = new ArrayDeque<>();
                     for (ConversationRecord r : records) {
-                        messages.add(ConversationMessage.builder()
+                        ConversationMessage msg = ConversationMessage.builder()
                                 .role(r.getRole())
                                 .content(r.getContent())
                                 .toolName(r.getToolName())
@@ -176,9 +177,11 @@ public class ConversationManager {
                                 .timestamp(r.getCreatedAt() != null
                                         ? r.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                                         : Instant.now().toEpochMilli())
-                                .build());
+                                .build();
+                        restored.addLast(msg);
                     }
-                    return messages;
+                    sessions.put(sessionId, restored);
+                    return new ArrayList<>(restored);
                 }
             } catch (Exception e) {
                 log.warn("DB history read failed: {}", e.getMessage());

@@ -66,6 +66,7 @@ const toolMeta: Record<string, { icon: React.ReactNode; label: string; color: st
   update_customer_status: { icon: <FileText size={12} />, label: "CRM更新",  color: "bg-teal-50 text-teal-600 border-teal-200" },
   image_understand:   { icon: <Camera size={12} />,       label: "AI识图",    color: "bg-purple-50 text-purple-600 border-purple-200" },
   image_generate:     { icon: <Wand2 size={12} />,       label: "图片生成",    color: "bg-pink-50 text-pink-600 border-pink-200" },
+  image_edit:         { icon: <PenTool size={12} />,     label: "图片编辑",    color: "bg-orange-50 text-orange-600 border-orange-200" },
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -108,6 +109,10 @@ export default function AgentChat() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // 防止 setSearchParams 触发重复加载
+  const lastLoadedSession = useRef<string | null>(null)
+  // 防止旧请求响应污染新会话
+  const activeSessionRef = useRef<string | null>(null)
 
   // 图片查看器状态
   const [lightbox, setLightbox] = useState<{ src: string; prompt: string } | null>(null)
@@ -120,12 +125,18 @@ export default function AgentChat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
   }, [messages])
 
-  // Load session from URL param
+  // Load session from URL param — 仅在真正切换会话时加载
   useEffect(() => {
     if (sessionFromUrl) {
-      loadSession(sessionFromUrl)
-    } else {
-      // 新对话：清空所有状态
+      if (lastLoadedSession.current !== sessionFromUrl) {
+        lastLoadedSession.current = sessionFromUrl
+        setLoading(false)  // 切换会话时停止旧会话的 loading
+        loadSession(sessionFromUrl)
+      }
+    } else if (lastLoadedSession.current !== null) {
+      // URL 无 session → 新对话
+      lastLoadedSession.current = null
+      setLoading(false)
       setMessages([{ ...WELCOME_MSG }])
       setSessionId(null)
       setInput("")
@@ -134,11 +145,13 @@ export default function AgentChat() {
     }
   }, [sessionFromUrl])
 
+
   // ═══════════════════════════════════════════════════════
   // Session management
   // ═══════════════════════════════════════════════════════
 
   const loadSession = async (sid: string) => {
+    activeSessionRef.current = sid
     try {
       const { data } = await api.get(`/agent/session/${sid}/history`)
       const records = data.records || []
@@ -212,6 +225,10 @@ export default function AgentChat() {
     const text = (overrideText || input).trim()
     if ((!text && attachedImages.length === 0) || loading) return
 
+    // 记录发起请求时的会话ID，防止响应错位
+    const requestSession = sessionId
+    activeSessionRef.current = requestSession
+
     let displayContent = text
     // 有图片无文字时，不强行写"请分析这张图片"，让LLM根据图片自行判断
     if (attachedImages.length > 0 && !text) displayContent = "[图片]"
@@ -226,14 +243,18 @@ export default function AgentChat() {
     setMessages(prev => [...prev, userMsg])
     setInput("")
     setLoading(true)
+    // 立即清除缩略图（图片已在用户消息中显示）
+    setAttachedImages([])
+    setImagePreviews([])
 
     try {
       if (attachedImages.length > 0) {
-        await handleImageMessage(text, attachedImages)
+        await handleImageMessage(text, attachedImages, requestSession)
       } else {
-        await handleTextMessage(text)
+        await handleTextMessage(text, requestSession)
       }
     } catch {
+      if (activeSessionRef.current !== requestSession && activeSessionRef.current !== null) return // 已切换会话
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -241,22 +262,26 @@ export default function AgentChat() {
         timestamp: new Date().toLocaleTimeString(),
       }])
     } finally {
-      setLoading(false)
-      setAttachedImages([])
-      setImagePreviews([])
+      if (activeSessionRef.current === requestSession || activeSessionRef.current === null) {
+        setLoading(false)
+      }
     }
   }
 
-  const handleTextMessage = async (text: string) => {
+  const handleTextMessage = async (text: string, requestSession: string | null) => {
     const { data } = await api.post("/v2/agent/run", {
       message: text,
-      sessionId,
+      sessionId: requestSession,
       enableTools: true,
     })
+
+    // 响应到达时已切换到其他会话，丢弃
+    if (activeSessionRef.current !== requestSession && activeSessionRef.current !== null) return
 
     setSessionId(data.sessionId)
     // Update URL without reload
     setSearchParams(data.sessionId ? { session: data.sessionId } : {})
+    lastLoadedSession.current = data.sessionId // 防止 setSearchParams 触发重新加载
 
     const toolCalls: ToolCall[] = data.toolCalls?.map((tc: any) => ({
       toolName: tc.toolName,
@@ -301,7 +326,7 @@ export default function AgentChat() {
     })
   }
 
-  const handleImageMessage = async (text: string, files: File[]) => {
+  const handleImageMessage = async (text: string, files: File[], requestSession: string | null) => {
     const base64Images: string[] = []
     for (const file of files) {
       const base64 = await resizeAndEncode(file, 1024)
@@ -312,13 +337,17 @@ export default function AgentChat() {
 
     const { data } = await api.post("/v2/agent/run", {
       message: prompt,
-      sessionId,
+      sessionId: requestSession,
       enableTools: true,
       parameters: { _images: base64Images },
     })
 
+    // 响应到达时已切换到其他会话，丢弃
+    if (activeSessionRef.current !== requestSession && activeSessionRef.current !== null) return
+
     setSessionId(data.sessionId)
     setSearchParams(data.sessionId ? { session: data.sessionId } : {})
+    lastLoadedSession.current = data.sessionId
 
     const toolCalls: ToolCall[] = data.toolCalls?.map((tc: any) => ({
       toolName: tc.toolName,
