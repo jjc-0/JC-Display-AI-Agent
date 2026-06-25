@@ -113,6 +113,8 @@ export default function AgentChat() {
   const lastLoadedSession = useRef<string | null>(null)
   // 防止旧请求响应污染新会话
   const activeSessionRef = useRef<string | null>(null)
+  // 防止 StrictMode / 组件重新挂载时重复调用 loadSession
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // 图片查看器状态
   const [lightbox, setLightbox] = useState<{ src: string; prompt: string } | null>(null)
@@ -127,14 +129,19 @@ export default function AgentChat() {
 
   // Load session from URL param — 仅在真正切换会话时加载
   useEffect(() => {
+    // 取消上一次未完成的请求，防止 StrictMode 或快速切换导致重复调用
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+    const { signal } = controller
+
     if (sessionFromUrl) {
       if (lastLoadedSession.current !== sessionFromUrl) {
         lastLoadedSession.current = sessionFromUrl
-        setLoading(false)  // 切换会话时停止旧会话的 loading
-        loadSession(sessionFromUrl)
+        setLoading(false)
+        loadSession(sessionFromUrl, signal)
       }
     } else if (lastLoadedSession.current !== null) {
-      // URL 无 session → 新对话
       lastLoadedSession.current = null
       setLoading(false)
       setMessages([{ ...WELCOME_MSG }])
@@ -143,6 +150,10 @@ export default function AgentChat() {
       setAttachedImages([])
       setImagePreviews([])
     }
+
+    return () => {
+      controller.abort()
+    }
   }, [sessionFromUrl])
 
 
@@ -150,10 +161,12 @@ export default function AgentChat() {
   // Session management
   // ═══════════════════════════════════════════════════════
 
-  const loadSession = async (sid: string) => {
+  const loadSession = async (sid: string, signal?: AbortSignal) => {
     activeSessionRef.current = sid
     try {
-      const { data } = await api.get(`/agent/session/${sid}/history`)
+      const { data } = await api.get(`/agent/session/${sid}/history`, { signal })
+      // 请求已被取消，不再更新状态
+      if (signal?.aborted) return
       const records = data.records || []
       if (records.length > 0) {
         setMessages(records.map((m: any) => ({
@@ -170,7 +183,9 @@ export default function AgentChat() {
       setInput("")
       setAttachedImages([])
       setImagePreviews([])
-    } catch {}
+    } catch {
+      // 请求被取消属于正常行为，不需要处理
+    }
   }
 
   const clearChat = () => {

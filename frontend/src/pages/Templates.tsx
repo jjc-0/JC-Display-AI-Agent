@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -48,11 +48,21 @@ export default function Templates() {
     active: true,
   })
 
-  useEffect(() => { loadTemplates() }, [])
+  const abortRef = useRef<AbortController | null>(null)
 
-  const loadTemplates = async () => {
+  useEffect(() => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const { signal } = controller
+    loadTemplates(signal)
+    return () => controller.abort()
+  }, [])
+
+  const loadTemplates = async (signal?: AbortSignal) => {
     try {
-      const { data } = await api.get("/copywriting/templates")
+      const { data } = await api.get("/copywriting/templates", { signal })
+      if (signal?.aborted) return
       setTemplates(Array.isArray(data) ? data : [])
     } catch {}
     setLoading(false)

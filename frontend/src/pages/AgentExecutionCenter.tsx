@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -98,13 +98,17 @@ export default function AgentExecutionCenter() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
-  const fetchData = useCallback(async () => {
+  const abortRef = useRef<AbortController | null>(null)
+
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setError("")
     try {
-      const { data: resp } = await api.get("/agent/execution-status")
+      const { data: resp } = await api.get("/agent/execution-status", { signal })
+      if (signal?.aborted) return
       setData(resp as ExecutionData)
     } catch (e: any) {
+      if (signal?.aborted) return
       setError(e.response?.data?.message || e.message || "获取执行状态失败")
     } finally {
       setLoading(false)
@@ -112,13 +116,21 @@ export default function AgentExecutionCenter() {
   }, [])
 
   useEffect(() => {
-    fetchData()
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    fetchData(controller.signal)
+    return () => controller.abort()
   }, [fetchData])
 
   // 自动轮询（每 15 秒）
   useEffect(() => {
-    const timer = setInterval(fetchData, 15000)
-    return () => clearInterval(timer)
+    const controller = new AbortController()
+    const timer = setInterval(() => fetchData(controller.signal), 15000)
+    return () => {
+      clearInterval(timer)
+      controller.abort()
+    }
   }, [fetchData])
 
   const activeAgents = data?.activeAgents ?? []
@@ -140,7 +152,7 @@ export default function AgentExecutionCenter() {
       <div className="flex flex-col items-center justify-center h-64 gap-3">
         <AlertCircle size={32} className="text-red-400" />
         <p className="text-sm text-muted-foreground">{error}</p>
-        <Button variant="outline" size="sm" onClick={fetchData}>
+        <Button variant="outline" size="sm" onClick={() => fetchData()}>
           <RefreshCw size={14} /> 重试
         </Button>
       </div>
@@ -156,7 +168,7 @@ export default function AgentExecutionCenter() {
           <p className="mt-1 text-sm text-muted-foreground">实时监控 Agent 任务执行、工具调用与运行日志</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             刷新
           </Button>

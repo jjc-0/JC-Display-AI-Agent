@@ -38,16 +38,27 @@ export default function KnowledgeBase() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { loadData() }, [])
+  const abortRef = useRef<AbortController | null>(null)
 
-  const loadData = async () => {
+  useEffect(() => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const { signal } = controller
+    loadData(signal)
+    return () => controller.abort()
+  }, [])
+
+  const loadData = async (signal?: AbortSignal) => {
     setLoading(true)
     try {
       const [statusRes, prodRes, docRes] = await Promise.allSettled([
-        api.get("/agent/knowledge/status"),
-        api.get("/agent/knowledge/products", { params: { size: 100 } }),
-        api.get("/agent/knowledge/documents"),
+        api.get("/agent/knowledge/status", { signal }),
+        api.get("/agent/knowledge/products", { params: { size: 100 }, signal }),
+        api.get("/agent/knowledge/documents", { signal }),
       ])
+
+      if (signal?.aborted) return
 
       if (statusRes.status === "fulfilled") {
         const s = statusRes.value.data
@@ -261,7 +272,7 @@ export default function KnowledgeBase() {
             </DialogContent>
           </Dialog>
 
-          <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => loadData()} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             刷新
           </Button>

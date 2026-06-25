@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -96,16 +96,27 @@ export default function Dashboard() {
     balance: { totalBalance: 0, currency: "CNY", isAvailable: false },
   })
 
-  useEffect(() => { loadAll() }, [])
+  const abortRef = useRef<AbortController | null>(null)
 
-  const loadAll = async () => {
+  useEffect(() => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const { signal } = controller
+    loadAll(signal)
+    return () => controller.abort()
+  }, [])
+
+  const loadAll = async (signal?: AbortSignal) => {
     setLoading(true)
     try {
       const [statusRes, sessionsRes, usageRes] = await Promise.allSettled([
-        api.get("/agent/knowledge/status"),
-        api.get("/agent/sessions"),
-        api.get("/deepseek/usage"),
+        api.get("/agent/knowledge/status", { signal }),
+        api.get("/agent/sessions", { signal }),
+        api.get("/deepseek/usage", { signal }),
       ])
+
+      if (signal?.aborted) return
 
       if (statusRes.status === "fulfilled") {
         const s = statusRes.value.data
@@ -167,7 +178,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold tracking-tight text-foreground">数据驾驶舱</h1>
           <p className="mt-1 text-sm text-muted-foreground">AI Agent 平台运营数据总览</p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => loadAll()} disabled={loading}>
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           刷新
         </Button>

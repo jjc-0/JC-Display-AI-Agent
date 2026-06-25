@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -119,20 +119,30 @@ export default function AgentSquare() {
   const [error, setError] = useState("")
   const navigate = useNavigate()
 
-  const fetchStats = useCallback(async () => {
+  const abortRef = useRef<AbortController | null>(null)
+
+  const fetchStats = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setError("")
     try {
-      const { data } = await api.get("/agent/agent-stats")
+      const { data } = await api.get("/agent/agent-stats", { signal })
+      if (signal?.aborted) return
       setAgentStats(data as AgentStats)
     } catch (e: any) {
+      if (signal?.aborted) return
       setError(e.response?.data?.message || e.message || "获取数据失败")
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { fetchStats() }, [fetchStats])
+  useEffect(() => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    fetchStats(controller.signal)
+    return () => controller.abort()
+  }, [fetchStats])
 
   // 合并静态定义 + 实时统计
   const agents = agentDefs.map((def) => {
@@ -178,7 +188,7 @@ export default function AgentSquare() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={fetchStats} disabled={loading}>
+          <Button variant="ghost" size="sm" onClick={() => fetchStats()} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </Button>
           <div className="relative">
