@@ -32,7 +32,7 @@ public class ConversationRecord {
     @Column(length = 30)
     private String operationType;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "MEDIUMTEXT")
     private String content;
 
     @Column(length = 50)

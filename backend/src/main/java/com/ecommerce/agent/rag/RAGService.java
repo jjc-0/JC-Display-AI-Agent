@@ -1,9 +1,6 @@
 package com.ecommerce.agent.rag;
 
 import com.ecommerce.agent.config.AIConfig;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -23,15 +20,15 @@ import java.util.stream.Collectors;
 public class RAGService {
 
     private final HybridSearchService hybridSearch;
-    private final EmbeddingModel embeddingModel;
     private final AIConfig aiConfig;
+    private final KnowledgeBaseLoader kbLoader;
 
     public RAGService(HybridSearchService hybridSearch,
-                      EmbeddingModel embeddingModel,
-                      AIConfig aiConfig) {
+                      AIConfig aiConfig,
+                      KnowledgeBaseLoader kbLoader) {
         this.hybridSearch = hybridSearch;
-        this.embeddingModel = embeddingModel;
         this.aiConfig = aiConfig;
+        this.kbLoader = kbLoader;
     }
 
     /**
@@ -41,6 +38,8 @@ public class RAGService {
         if (!aiConfig.getRag().isAugmentPrompt()) {
             return null;
         }
+        // 懒加载：首次查询时按需构建向量索引
+        kbLoader.ensureLoaded();
 
         String context = retrieveContext(userQuery);
         if (context == null || context.isBlank()) {
@@ -123,26 +122,17 @@ public class RAGService {
      * 检索原始结果（含分数和来源信息）
      */
     public List<HybridSearchService.SearchResult> search(String query, int maxResults) {
+        kbLoader.ensureLoaded();
         return hybridSearch.hybridSearch(query, maxResults, aiConfig.getRag().getMinScore(), null);
     }
 
-    private volatile Boolean availabilityCache = null;
-
     public boolean isAvailable() {
-        if (availabilityCache != null) {
-            return availabilityCache;
-        }
-        try {
-            embeddingModel.embed("test");
-            availabilityCache = true;
-        } catch (Exception e) {
-            log.warn("RAG嵌入模型不可用: {}", e.getMessage());
-            availabilityCache = false;
-        }
-        return availabilityCache;
+        // 仅检查密钥是否配置，不浪费 API 调用（embedding 使用 OpenAI 兼容 API）
+        return aiConfig.isOpenAIKeyConfigured();
     }
 
     public String buildAugmentedSystemPrompt(String baseSystemPrompt, String query) {
+        kbLoader.ensureLoaded();
         String context = retrieveContext(query);
         if (context == null || context.isBlank()) {
             return baseSystemPrompt;

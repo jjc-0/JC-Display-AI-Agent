@@ -47,11 +47,8 @@ public class AIConfig {
     @Data
     public static class ImageGenConfig {
         private boolean enabled = false;
-        private String apiKey;
-        private String baseUrl = "https://dashscope.aliyuncs.com";
-        private String model = "wanx2.1-t2i-turbo";
-        private String size = "1024*1024";
-        private String style = "auto";
+        private String model = "gpt-image-2";
+        private String size = "1024x1024";
         private int n = 1;
     }
 
@@ -74,6 +71,16 @@ public class AIConfig {
         for (char c : key.toCharArray()) {
             if (c > 127) return false;
         }
+        return true;
+    }
+
+    /** 检查 OpenAI API Key 是否已配置（用于多模态/图片生成兜底） */
+    public boolean isOpenAIKeyConfigured() {
+        String key = providers.getOpenai().getApiKey();
+        if (key == null || key.isBlank()) return false;
+        if (key.contains("placeholder") || key.contains("your-key")) return false;
+        if (!key.startsWith("sk-")) return false;
+        if (key.length() < 25) return false;
         return true;
     }
 }

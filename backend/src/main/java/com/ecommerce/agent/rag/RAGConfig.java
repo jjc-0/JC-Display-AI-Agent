@@ -11,16 +11,16 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * RAG 配置
- * - EmbeddingModel: DeepSeek API（OpenAI 兼容格式，尝试 /v1/embeddings）
- * - EmbeddingStore: 内存存储（启动时从 MySQL 重建）
+ * - EmbeddingModel: 使用 OpenAI 兼容 API（DeepSeek 不支持 /v1/embeddings）
+ * - EmbeddingStore: 内存存储，首次查询时懒加载
  */
 @Configuration
 public class RAGConfig {
 
-    @Value("${DEEPSEEK_API_KEY:sk-placeholder}")
+    @Value("${OPENAI_API_KEY:sk-placeholder}")
     private String apiKey;
 
-    @Value("${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}")
+    @Value("${OPENAI_BASE_URL:https://api.openai.com/v1}")
     private String baseUrl;
 
     @Bean
@@ -28,7 +28,7 @@ public class RAGConfig {
         return OpenAiEmbeddingModel.builder()
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
-                .modelName("text-embedding-v2")
+                .modelName("text-embedding-3-small")
                 .maxRetries(1)
                 .build();
     }

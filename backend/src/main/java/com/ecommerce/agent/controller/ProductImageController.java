@@ -27,7 +27,7 @@ public class ProductImageController {
 
         if (!imageGenerationService.isConfigured()) {
             result.put("success", false);
-            result.put("error", "图片生成服务未配置，请在 application-secrets.yml 中设置 IMAGE_GEN_API_KEY");
+            result.put("error", "图片生成服务未配置，请在 application-secrets.yml 中设置 IMAGE_GEN_ENABLED=true 并确保 OPENAI_API_KEY 已配置");
             return result;
         }
 
@@ -42,7 +42,7 @@ public class ProductImageController {
         String size = body.getOrDefault("size", "1024x1024");
 
         try {
-            Map<String, Object> genResult = imageGenerationService.generate(prompt, style, size).get();
+            Map<String, Object> genResult = imageGenerationService.generate(prompt, style, size);
             result.put("success", true);
             result.putAll(genResult);
         } catch (Exception e) {

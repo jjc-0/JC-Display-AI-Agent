@@ -58,12 +58,21 @@ public class HybridSearchService {
      * @return 融合排序后的文档片段列表
      */
     public List<SearchResult> hybridSearch(String query, int maxResults, double minScore, String sourceFilter) {
+        // 只计算一次 query embedding，供向量检索和 BM25 复用
+        Embedding queryEmbedding;
+        try {
+            queryEmbedding = embeddingModel.embed(query).content();
+        } catch (Exception e) {
+            log.warn("查询向量化失败: {}", e.getMessage());
+            return List.of();
+        }
+
         // 路径1: 向量语义检索
-        List<ScoredChunk> vectorResults = vectorSearch(query, maxResults * 2, minScore);
+        List<ScoredChunk> vectorResults = vectorSearchEmbedding(queryEmbedding, maxResults * 2, minScore);
         log.debug("向量检索: {} 条结果", vectorResults.size());
 
-        // 路径2: BM25 关键词检索
-        List<ScoredChunk> bm25Results = bm25Search(query, maxResults * 2);
+        // 路径2: BM25 关键词检索（复用同一个 embedding）
+        List<ScoredChunk> bm25Results = bm25SearchEmbedding(queryEmbedding, query, maxResults * 2);
         log.debug("BM25检索: {} 条结果", bm25Results.size());
 
         // 融合排序
@@ -73,11 +82,10 @@ public class HybridSearchService {
     }
 
     /**
-     * 向量语义检索
+     * 向量语义检索（使用预计算 embedding，避免重复调用 API）
      */
-    private List<ScoredChunk> vectorSearch(String query, int maxResults, double minScore) {
+    private List<ScoredChunk> vectorSearchEmbedding(Embedding queryEmbedding, int maxResults, double minScore) {
         try {
-            Embedding queryEmbedding = embeddingModel.embed(query).content();
             EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
                     .queryEmbedding(queryEmbedding)
                     .maxResults(maxResults)
@@ -97,26 +105,19 @@ public class HybridSearchService {
     }
 
     /**
-     * BM25 关键词检索 — 在所有已索引 chunk 上执行
+     * BM25 关键词检索 — 复用预计算 embedding 作为候选集
      */
-    private List<ScoredChunk> bm25Search(String query, int maxResults) {
-        // 收集所有 chunk（从 embedding store 获取 — 实际使用需遍历）
-        // 这里使用向量检索的更大范围作为备选，然后用 BM25 重新打分
-        // 为使 BM25 高效，使用 EmbeddingStore 基于 metadata 的 filter
-        // 但由于 InMemoryEmbeddingStore 不支持遍历，我们采用简化方法：
-
-        // 简化 BM25: 直接在预先加载的 chunk 上做关键词匹配
+    private List<ScoredChunk> bm25SearchEmbedding(Embedding queryEmbedding, String query, int maxResults) {
         // 分词查询
         List<String> queryTokens = tokenize(query);
         if (queryTokens.isEmpty()) return List.of();
 
-        // 用向量检索获取候选集（扩大范围）
+        // 复用预计算的 embedding 获取候选集（不再重复调用 API）
         List<ScoredChunk> candidates;
         try {
-            Embedding queryEmbedding = embeddingModel.embed(query).content();
             EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
                     .queryEmbedding(queryEmbedding)
-                    .maxResults(500) // 大候选集
+                    .maxResults(500)
                     .minScore(0.25)
                     .build();
             candidates = embeddingStore.search(request).matches().stream()

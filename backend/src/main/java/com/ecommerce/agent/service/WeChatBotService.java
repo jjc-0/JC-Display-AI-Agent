@@ -217,7 +217,7 @@ public class WeChatBotService {
             // 创建/获取 session
             String sessionId = userSessions.computeIfAbsent(fromUserId, k -> {
                 String sid = "wx_" + k;
-                return conversationManager.createSession(sid, "微信:" + k, "wechat");
+                return conversationManager.createSession(sid, "微信对话", "wechat");
             });
 
             // ═══ v2: 使用 AgentRuntime 替代 AgentDispatcher ═══

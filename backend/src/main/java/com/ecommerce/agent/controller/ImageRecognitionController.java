@@ -1,6 +1,6 @@
 package com.ecommerce.agent.controller;
 
-import com.ecommerce.agent.llm.OpenAIProvider;
+import com.ecommerce.agent.llm.MultiModelOrchestrator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -16,16 +16,16 @@ import java.util.Map;
 @RequestMapping("/api/image")
 public class ImageRecognitionController {
 
-    private final OpenAIProvider openAIProvider;
+    private final MultiModelOrchestrator orchestrator;
     private final ObjectMapper objectMapper;
 
-    public ImageRecognitionController(OpenAIProvider openAIProvider, ObjectMapper objectMapper) {
-        this.openAIProvider = openAIProvider;
+    public ImageRecognitionController(MultiModelOrchestrator orchestrator, ObjectMapper objectMapper) {
+        this.orchestrator = orchestrator;
         this.objectMapper = objectMapper;
     }
 
     /**
-     * 图片识别接口 — 上传图片并返回 GPT-4o 分析结果
+     * 图片识别接口 — DeepSeek Vision 优先，失败自动回退 ChatGPT
      */
     @PostMapping(value = "/recognize", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Map<String, Object> recognizeImage(
@@ -64,7 +64,8 @@ public class ImageRecognitionController {
                     contentType,
                     prompt.substring(0, Math.min(prompt.length(), 50)));
 
-            String analysis = openAIProvider.imageRecognition(imageBytes, contentType, prompt).get();
+            // DeepSeek Vision 优先，失败自动回退 ChatGPT
+            String analysis = orchestrator.recognizeImage(imageBytes, contentType, prompt).get();
 
             result.put("success", true);
             result.put("result", analysis);

@@ -11,6 +11,7 @@ import {
 import api from "@/lib/api"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
+import ImageViewer from "@/components/chat/ImageViewer"
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -108,6 +109,9 @@ export default function AgentChat() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // 图片查看器状态
+  const [lightbox, setLightbox] = useState<{ src: string; prompt: string } | null>(null)
+
   // ═══════════════════════════════════════════════════════
   // Effects
   // ═══════════════════════════════════════════════════════
@@ -120,6 +124,13 @@ export default function AgentChat() {
   useEffect(() => {
     if (sessionFromUrl) {
       loadSession(sessionFromUrl)
+    } else {
+      // 新对话：清空所有状态
+      setMessages([{ ...WELCOME_MSG }])
+      setSessionId(null)
+      setInput("")
+      setAttachedImages([])
+      setImagePreviews([])
     }
   }, [sessionFromUrl])
 
@@ -138,8 +149,14 @@ export default function AgentChat() {
           content: m.content,
           timestamp: m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : "",
         })))
+      } else {
+        // 空会话：重置到初始状态
+        setMessages([{ ...WELCOME_MSG }])
       }
       setSessionId(sid)
+      setInput("")
+      setAttachedImages([])
+      setImagePreviews([])
     } catch {}
   }
 
@@ -196,7 +213,8 @@ export default function AgentChat() {
     if ((!text && attachedImages.length === 0) || loading) return
 
     let displayContent = text
-    if (attachedImages.length > 0 && !text) displayContent = "请分析这张图片"
+    // 有图片无文字时，不强行写"请分析这张图片"，让LLM根据图片自行判断
+    if (attachedImages.length > 0 && !text) displayContent = "[图片]"
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -257,21 +275,43 @@ export default function AgentChat() {
     }])
   }
 
+  /**
+   * 图片缩放 + Base64 编码（限制最长边，减少 API 传输量）
+   */
+  const resizeAndEncode = (file: File, maxPixels: number): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxPixels / Math.max(img.width, img.height))
+        if (scale >= 1) {
+          // 原图已经够小，直接读
+          const r = new FileReader()
+          r.onload = () => resolve(r.result as string)
+          r.readAsDataURL(file)
+          return
+        }
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        const ctx = canvas.getContext("2d")!
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL("image/jpeg", 0.8))
+      }
+      img.src = URL.createObjectURL(file)
+    })
+  }
+
   const handleImageMessage = async (text: string, files: File[]) => {
     const base64Images: string[] = []
     for (const file of files) {
-      const base64 = await new Promise<string>((resolve) => {
-        const r = new FileReader()
-        r.onload = () => resolve(r.result as string)
-        r.readAsDataURL(file)
-      })
+      const base64 = await resizeAndEncode(file, 1024)
       base64Images.push(base64)
     }
 
-    const prompt = text || "请详细分析这张图片的内容，包括产品特征、颜色、材质、用途、设计特点"
+    const prompt = text || ""
 
     const { data } = await api.post("/v2/agent/run", {
-      message: `${prompt}\n\n[图片已上传，base64数据省略，请用 image_understand 工具分析]`,
+      message: prompt,
       sessionId,
       enableTools: true,
       parameters: { _images: base64Images },
@@ -295,6 +335,21 @@ export default function AgentChat() {
       model: data.modelUsed,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     }])
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Image viewer actions
+  // ═══════════════════════════════════════════════════════
+
+  const handleRegenerate = (prompt: string) => {
+    setInput(prompt)
+    setTimeout(() => sendMessage(prompt), 150)
+  }
+
+  const handleEditImage = (editPrompt: string, action: string) => {
+    const msg = `对刚才生成的图片进行局部修改：${editPrompt}`
+    setInput(msg)
+    setTimeout(() => sendMessage(msg), 150)
   }
 
   // ═══════════════════════════════════════════════════════
@@ -348,7 +403,13 @@ export default function AgentChat() {
                       <ReactMarkdown
                         components={{
                           img: ({ src, alt }) => (
-                            <img src={src} alt={alt || ""} className="rounded-lg max-w-full max-h-[400px] object-contain my-2" loading="lazy" />
+                            <img
+                              src={src}
+                              alt={alt || ""}
+                              className="rounded-lg max-w-full max-h-[400px] object-contain my-2 cursor-zoom-in hover:opacity-90 transition-opacity border border-border/50"
+                              loading="lazy"
+                              onClick={() => setLightbox({ src: src || "", prompt: alt || "" })}
+                            />
                           ),
                           table: ({ children }) => (
                             <div className="overflow-x-auto my-2"><table className="min-w-full text-xs border-collapse">{children}</table></div>
@@ -473,6 +534,15 @@ export default function AgentChat() {
           </p>
         </div>
       </div>
+
+      {/* ══ 图片查看器 ══ */}
+      <ImageViewer
+        src={lightbox?.src || null}
+        prompt={lightbox?.prompt}
+        onClose={() => setLightbox(null)}
+        onRegenerate={handleRegenerate}
+        onEdit={handleEditImage}
+      />
     </div>
   )
 }

@@ -71,35 +71,35 @@ public class ImageGenerationTool implements Tool {
 
     @Override
     public CompletableFuture<String> execute(Map<String, Object> params) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                String prompt = (String) params.get("prompt");
-                String size = (String) params.getOrDefault("size", "1024*1024");
+        // 同步执行（ToolRouter 管理线程和超时；避免 ForkJoinPool 嵌套死锁）
+        try {
+            String prompt = (String) params.get("prompt");
+            String size = (String) params.getOrDefault("size", "1024*1024");
 
-                if (!imageGenService.isConfigured()) {
-                    return "❌ 图片生成服务未配置，请在 application-secrets.yml 中设置 IMAGE_GEN_API_KEY";
-                }
-
-                Map<String, Object> result = imageGenService.generate(prompt, "vivid", size)
-                        .get(180, java.util.concurrent.TimeUnit.SECONDS);
-
-                @SuppressWarnings("unchecked")
-                List<String> images = (List<String>) result.get("images");
-                if (images == null || images.isEmpty()) {
-                    return "⚠️ 图片生成请求已提交但未返回结果，可能仍在处理中。";
-                }
-
-                StringBuilder sb = new StringBuilder("🖼️ AI 产品图已生成:\n\n");
-                for (int i = 0; i < images.size(); i++) {
-                    sb.append("![").append(prompt.length() > 30 ? prompt.substring(0, 30) + "..." : prompt)
-                            .append("](").append(images.get(i)).append(")\n\n");
-                }
-                return sb.toString();
-
-            } catch (Exception e) {
-                log.error("图片生成失败", e);
-                return "❌ 图片生成失败: " + e.getMessage();
+            if (!imageGenService.isConfigured()) {
+                return CompletableFuture.completedFuture(
+                        "❌ 图片生成服务未配置，请设置 IMAGE_GEN_ENABLED=true 并确保 OPENAI_API_KEY 已配置");
             }
-        });
+
+            Map<String, Object> result = imageGenService.generate(prompt, "vivid", size);
+
+            @SuppressWarnings("unchecked")
+            List<String> images = (List<String>) result.get("images");
+            if (images == null || images.isEmpty()) {
+                return CompletableFuture.completedFuture(
+                        "⚠️ 图片生成请求已提交但未返回结果，可能仍在处理中。");
+            }
+
+            StringBuilder sb = new StringBuilder("🖼️ AI 产品图已生成:\n\n");
+            for (int i = 0; i < images.size(); i++) {
+                sb.append("![").append(prompt.length() > 30 ? prompt.substring(0, 30) + "..." : prompt)
+                        .append("](").append(images.get(i)).append(")\n\n");
+            }
+            return CompletableFuture.completedFuture(sb.toString());
+
+        } catch (Exception e) {
+            log.error("图片生成失败", e);
+            return CompletableFuture.completedFuture("❌ 图片生成失败: " + e.getMessage());
+        }
     }
 }

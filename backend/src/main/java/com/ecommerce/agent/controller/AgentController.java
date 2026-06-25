@@ -116,6 +116,14 @@ public class AgentController {
             String sid = (String) s.get("sessionId");
             String opType = (String) s.get("operationType");
             String title = (String) s.get("title");
+
+            // 微信会话统一显示"微信对话"，避免 ID 乱码
+            if (sid != null && sid.startsWith("wx_")) {
+                title = "微信对话";
+                m.put("title", title);
+                opType = "wechat";
+            }
+
             if (opType == null || opType.isBlank()) {
                 opType = inferType(title);
             }

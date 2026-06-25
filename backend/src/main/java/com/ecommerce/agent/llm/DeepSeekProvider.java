@@ -10,6 +10,7 @@ import okhttp3.*;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -191,5 +192,129 @@ public class DeepSeekProvider implements LLMProvider {
             JsonNode root = objectMapper.readTree(response.body().string());
             return root.path("choices").get(0).path("message");
         }
+    }
+
+    /**
+     * 带工具 + 图片（多模态）— 图片直接作为 content parts 传给 LLM
+     */
+    @Override
+    public CompletableFuture<String> chatCompletionWithToolsAndImages(
+            String systemPrompt, String userMessage, List<Map<String, Object>> tools, List<String> base64Images) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                AIConfig.DeepSeekConfig ds = aiConfig.getProviders().getDeepseek();
+                ObjectNode requestBody = objectMapper.createObjectNode();
+                requestBody.put("model", ds.getModel());
+                requestBody.put("max_tokens", ds.getMaxTokens());
+                requestBody.put("temperature", ds.getTemperature());
+
+                ArrayNode messages = objectMapper.createArrayNode();
+                if (systemPrompt != null && !systemPrompt.isBlank()) {
+                    addMessage(messages, "system", systemPrompt);
+                }
+
+                // 用户消息：text + image_url parts
+                if (base64Images != null && !base64Images.isEmpty()) {
+                    ObjectNode userMsg = objectMapper.createObjectNode();
+                    userMsg.put("role", "user");
+                    ArrayNode contentParts = objectMapper.createArrayNode();
+
+                    // 文字部分
+                    if (userMessage != null && !userMessage.isBlank()) {
+                        ObjectNode textPart = objectMapper.createObjectNode();
+                        textPart.put("type", "text");
+                        textPart.put("text", userMessage);
+                        contentParts.add(textPart);
+                    }
+
+                    // 图片部分（data URI）
+                    for (String img : base64Images) {
+                        ObjectNode imgPart = objectMapper.createObjectNode();
+                        imgPart.put("type", "image_url");
+                        ObjectNode imgUrl = objectMapper.createObjectNode();
+                        imgUrl.put("url", img);
+                        imgPart.set("image_url", imgUrl);
+                        contentParts.add(imgPart);
+                    }
+                    userMsg.set("content", contentParts);
+                    messages.add(userMsg);
+                } else {
+                    addMessage(messages, "user", userMessage);
+                }
+                requestBody.set("messages", messages);
+
+                if (tools != null && !tools.isEmpty()) {
+                    ArrayNode toolsArray = objectMapper.valueToTree(tools);
+                    requestBody.set("tools", toolsArray);
+                    requestBody.put("tool_choice", "auto");
+                }
+
+                return executeToolRequest(requestBody);
+            } catch (Exception e) {
+                log.error("DeepSeek multimodal tool call error", e);
+                throw new RuntimeException("DeepSeek多模态调用失败: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    /**
+     * 图片识别 — DeepSeek Vision 多模态
+     */
+    public CompletableFuture<String> imageRecognition(byte[] imageBytes, String mimeType, String prompt) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                AIConfig.DeepSeekConfig ds = aiConfig.getProviders().getDeepseek();
+                String base64 = Base64.getEncoder().encodeToString(imageBytes);
+                String dataUri = "data:" + mimeType + ";base64," + base64;
+
+                ObjectNode requestBody = objectMapper.createObjectNode();
+                requestBody.put("model", ds.getModel());
+                requestBody.put("max_tokens", ds.getMaxTokens());
+                requestBody.put("temperature", ds.getTemperature());
+
+                ArrayNode messages = objectMapper.createArrayNode();
+                ObjectNode userMsg = objectMapper.createObjectNode();
+                userMsg.put("role", "user");
+
+                ArrayNode contentParts = objectMapper.createArrayNode();
+
+                ObjectNode textPart = objectMapper.createObjectNode();
+                textPart.put("type", "text");
+                textPart.put("text", prompt != null && !prompt.isBlank() ? prompt : "请详细描述这张图片的内容");
+                contentParts.add(textPart);
+
+                ObjectNode imagePart = objectMapper.createObjectNode();
+                imagePart.put("type", "image_url");
+                ObjectNode imageUrl = objectMapper.createObjectNode();
+                imageUrl.put("url", dataUri);
+                imagePart.set("image_url", imageUrl);
+                contentParts.add(imagePart);
+
+                userMsg.set("content", contentParts);
+                messages.add(userMsg);
+                requestBody.set("messages", messages);
+
+                String url = ds.getBaseUrl() + "/chat/completions";
+                Request request = new Request.Builder()
+                        .url(url)
+                        .post(RequestBody.create(requestBody.toString(), MediaType.parse("application/json")))
+                        .addHeader("Authorization", "Bearer " + ds.getApiKey())
+                        .addHeader("Content-Type", "application/json")
+                        .build();
+
+                try (Response response = httpClient.newCall(request).execute()) {
+                    if (!response.isSuccessful()) {
+                        String errorBody = response.body() != null ? response.body().string() : "Unknown error";
+                        log.error("DeepSeek Vision API error: {} {}", response.code(), errorBody);
+                        throw new RuntimeException("图片识别失败: " + response.code() + " " + errorBody);
+                    }
+                    JsonNode root = objectMapper.readTree(response.body().string());
+                    return root.path("choices").get(0).path("message").path("content").asText("");
+                }
+            } catch (Exception e) {
+                log.error("DeepSeek image recognition error", e);
+                throw new RuntimeException("图片识别失败: " + e.getMessage(), e);
+            }
+        });
     }
 }

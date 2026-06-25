@@ -27,7 +27,7 @@ public class OpenAIProvider implements LLMProvider {
         this.aiConfig = aiConfig;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
                 .build();
         this.objectMapper = new ObjectMapper();
     }
@@ -120,23 +120,63 @@ public class OpenAIProvider implements LLMProvider {
         });
     }
 
+    @Override
+    public CompletableFuture<String> chatCompletionWithToolsAndImages(
+            String systemPrompt, String userMessage, List<Map<String, Object>> tools, List<String> base64Images) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                ObjectNode requestBody = buildBaseRequest(systemPrompt);
+                ArrayNode messages = (ArrayNode) requestBody.get("messages");
+
+                if (base64Images != null && !base64Images.isEmpty()) {
+                    ObjectNode userMsg = objectMapper.createObjectNode();
+                    userMsg.put("role", "user");
+                    ArrayNode parts = objectMapper.createArrayNode();
+                    if (userMessage != null && !userMessage.isBlank()) {
+                        ObjectNode tp = objectMapper.createObjectNode();
+                        tp.put("type", "text");
+                        tp.put("text", userMessage);
+                        parts.add(tp);
+                    }
+                    for (String img : base64Images) {
+                        ObjectNode ip = objectMapper.createObjectNode();
+                        ip.put("type", "image_url");
+                        ObjectNode iu = objectMapper.createObjectNode();
+                        iu.put("url", img);
+                        ip.set("image_url", iu);
+                        parts.add(ip);
+                    }
+                    userMsg.set("content", parts);
+                    messages.add(userMsg);
+                } else {
+                    addMessage(messages, "user", userMessage);
+                }
+                if (tools != null && !tools.isEmpty()) {
+                    requestBody.set("tools", objectMapper.valueToTree(tools));
+                    requestBody.put("tool_choice", "auto");
+                }
+                return executeToolRequest(requestBody);
+            } catch (Exception e) {
+                log.error("OpenAI multimodal tool call error", e);
+                throw new RuntimeException("OpenAI多模态调用失败: " + e.getMessage(), e);
+            }
+        });
+    }
+
     /**
-     * 图片识别 — 使用 DeepSeek Vision 多模态能力
-     * @param imageBytes 图片字节数据
-     * @param mimeType  图片 MIME 类型 (image/jpeg, image/png 等)
-     * @param prompt    用户提示词
+     * 图片识别 — 使用 OpenAI 多模态能力 (DeepSeek 不可用时的兜底)
      */
     public CompletableFuture<String> imageRecognition(byte[] imageBytes, String mimeType, String prompt) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                AIConfig.DeepSeekConfig ds = aiConfig.getProviders().getDeepseek();
+                AIConfig.OpenAIConfig oai = aiConfig.getProviders().getOpenai();
                 String base64 = Base64.getEncoder().encodeToString(imageBytes);
                 String dataUri = "data:" + mimeType + ";base64," + base64;
 
                 ObjectNode requestBody = objectMapper.createObjectNode();
-                requestBody.put("model", ds.getModel());
-                requestBody.put("max_tokens", ds.getMaxTokens());
-                requestBody.put("temperature", ds.getTemperature());
+                requestBody.put("model", oai.getModel());
+                requestBody.put("max_tokens", oai.getMaxTokens());
+                requestBody.put("temperature", oai.getTemperature());
 
                 ArrayNode messages = objectMapper.createArrayNode();
                 ObjectNode userMsg = objectMapper.createObjectNode();
@@ -160,25 +200,25 @@ public class OpenAIProvider implements LLMProvider {
                 messages.add(userMsg);
                 requestBody.set("messages", messages);
 
-                String url = ds.getBaseUrl() + "/chat/completions";
+                String url = oai.getBaseUrl() + "/chat/completions";
                 Request request = new Request.Builder()
                         .url(url)
                         .post(RequestBody.create(requestBody.toString(), MediaType.parse("application/json")))
-                        .addHeader("Authorization", "Bearer " + ds.getApiKey())
+                        .addHeader("Authorization", "Bearer " + oai.getApiKey())
                         .addHeader("Content-Type", "application/json")
                         .build();
 
                 try (Response response = httpClient.newCall(request).execute()) {
                     if (!response.isSuccessful()) {
                         String errorBody = response.body() != null ? response.body().string() : "Unknown error";
-                        log.error("DeepSeek Vision API error: {} {}", response.code(), errorBody);
+                        log.error("OpenAI Vision API error: {} {}", response.code(), errorBody);
                         throw new RuntimeException("图片识别失败: " + response.code() + " " + errorBody);
                     }
                     JsonNode root = objectMapper.readTree(response.body().string());
                     return root.path("choices").get(0).path("message").path("content").asText("");
                 }
             } catch (Exception e) {
-                log.error("DeepSeek image recognition error", e);
+                log.error("OpenAI image recognition error", e);
                 throw new RuntimeException("图片识别失败: " + e.getMessage(), e);
             }
         });

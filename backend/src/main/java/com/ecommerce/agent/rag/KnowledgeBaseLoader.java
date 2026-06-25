@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 知识库加载器 — 从 MySQL 加载数据 → 智能分块 → 向量索引
@@ -51,17 +52,29 @@ public class KnowledgeBaseLoader {
         this.productRepo = productRepo;
     }
 
+    private final AtomicBoolean loaded = new AtomicBoolean(false);
+
+    /**
+     * 仅执行文档种子写入 MySQL（不调用任何 Embedding API）
+     * doLoad() 改为懒加载：首次 RAG 查询时触发，避免每次启动重复嵌入
+     */
     @PostConstruct
     public void init() {
         seedDefaultDocuments();
-        // 异步构建向量索引，避免阻塞应用启动（866 个产品嵌入耗时较长）
-        new Thread(() -> {
+    }
+
+    /** 懒加载入口 — 首次查询时自动触发，后续调用直接跳过 */
+    public void ensureLoaded() {
+        if (loaded.get()) return;
+        synchronized (loaded) {
+            if (loaded.get()) return;
             try {
                 doLoad();
+                loaded.set(true);
             } catch (Exception e) {
                 log.error("知识库向量索引构建失败", e);
             }
-        }, "kb-loader").start();
+        }
     }
 
     /**
@@ -93,8 +106,10 @@ public class KnowledgeBaseLoader {
      * 强制重新加载知识库（含产品数据）— 由爬虫完成后或文档上传后调用
      */
     public void forceReload() {
+        loaded.set(false);
         hybridSearch.clearCache();
         doLoad();
+        loaded.set(true);
     }
 
     private void doLoad() {

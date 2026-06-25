@@ -44,19 +44,30 @@ public class ConversationManager {
 
     /** 使用指定 sessionId 创建会话（用于微信等外部渠道绑定固定会话） */
     public String createSession(String sessionId, String title, String operationType) {
+        // 如果 DB 中已存在（服务重启后），不覆盖，直接恢复到内存
         sessions.put(sessionId, new ArrayDeque<>());
 
         if (isDbAvailable()) {
             try {
-                ConversationSession session = ConversationSession.builder()
-                        .sessionId(sessionId)
-                        .title(title)
-                        .operationType(operationType)
-                        .createdAt(LocalDateTime.now())
-                        .updatedAt(LocalDateTime.now())
-                        .messageCount(0)
-                        .build();
-                sessionRepository.save(session);
+                boolean exists = sessionRepository.findBySessionId(sessionId).isPresent();
+                if (!exists) {
+                    ConversationSession session = ConversationSession.builder()
+                            .sessionId(sessionId)
+                            .title(title)
+                            .operationType(operationType)
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .messageCount(0)
+                            .build();
+                    sessionRepository.save(session);
+                } else {
+                    // 恢复：更新 title + updatedAt
+                    sessionRepository.findBySessionId(sessionId).ifPresent(s -> {
+                        if (title != null) s.setTitle(title);
+                        s.setUpdatedAt(LocalDateTime.now());
+                        sessionRepository.save(s);
+                    });
+                }
             } catch (Exception e) {
                 log.warn("DB session save failed: {}", e.getMessage());
             }
@@ -101,7 +112,8 @@ public class ConversationManager {
                 recordRepository.save(record);
 
                 sessionRepository.findBySessionId(sessionId).ifPresent(s -> {
-                    s.setMessageCount(s.getMessageCount() + 1);
+                    s.setMessageCount(s.getMessageCount() != null ? s.getMessageCount() + 1 : 1);
+                    s.setUpdatedAt(LocalDateTime.now());
                     sessionRepository.save(s);
                 });
             } catch (Exception e) {
@@ -138,7 +150,8 @@ public class ConversationManager {
                 recordRepository.save(record);
 
                 sessionRepository.findBySessionId(sessionId).ifPresent(s -> {
-                    s.setMessageCount(s.getMessageCount() + 1);
+                    s.setMessageCount(s.getMessageCount() != null ? s.getMessageCount() + 1 : 1);
+                    s.setUpdatedAt(LocalDateTime.now());
                     sessionRepository.save(s);
                 });
             } catch (Exception e) {
@@ -207,7 +220,16 @@ public class ConversationManager {
     }
 
     public boolean sessionExists(String sessionId) {
-        return sessions.containsKey(sessionId);
+        if (sessions.containsKey(sessionId)) return true;
+        // 内存中没有，查 DB（服务重启后恢复）
+        if (isDbAvailable()) {
+            try {
+                return sessionRepository.findBySessionId(sessionId).isPresent();
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     public String getContextSummary(String sessionId) {
@@ -270,11 +292,12 @@ public class ConversationManager {
             info.put("sessionId", s.getSessionId());
             info.put("title", s.getTitle() != null ? s.getTitle() : "Untitled");
             info.put("operationType", s.getOperationType());
-            info.put("messageCount", s.getMessageCount());
-            info.put("createdAt", s.getCreatedAt().toString());
-            info.put("updatedAt", s.getUpdatedAt().toString());
+            info.put("messageCount", s.getMessageCount() != null ? s.getMessageCount() : 0);
+            info.put("createdAt", s.getCreatedAt() != null ? s.getCreatedAt().toString() : "");
+            info.put("updatedAt", s.getUpdatedAt() != null ? s.getUpdatedAt().toString() : "");
             result.add(info);
         }
+        log.debug("会话列表查询: {} 条", result.size());
         return result;
     }
 

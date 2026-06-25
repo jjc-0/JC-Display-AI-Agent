@@ -90,18 +90,21 @@ public class AgentRuntime {
         boolean isNewSession = request.getSessionId() == null
                 || !conversationManager.sessionExists(request.getSessionId());
 
-        // 1a. 处理上传图片 → 注入到会话 + 存储供 Tool 使用
+        // 1a. 提取图片（data URI 列表）
         List<String> images = extractImages(request);
         if (!images.isEmpty()) {
             sessionImages.put(sessionId, images);
         }
 
-        // 1b. 构建用户消息（图片信息 → 告知LLM调用工具）
-        String enhancedMessage = buildImageAwareMessage(request.getMessage(), images);
-        conversationManager.addMessage(sessionId, "user", enhancedMessage);
+        // 1b. 用户消息 — 如果有图片则用原始消息（LLM 同时看到文字+图片）
+        String userMessage = request.getMessage() != null && !request.getMessage().isBlank()
+                ? request.getMessage()
+                : (images.isEmpty() ? "你好" : "");
+        conversationManager.addMessage(sessionId, "user",
+                images.isEmpty() ? userMessage : (userMessage + " [图片x" + images.size() + "]"));
 
         if (isNewSession) {
-            titleService.autoTitle(sessionId, enhancedMessage);
+            titleService.autoTitle(sessionId, images.isEmpty() ? userMessage : userMessage);
         }
 
         // 2. 获取 LLM Provider
@@ -116,7 +119,7 @@ public class AgentRuntime {
         List<AgentResponse.ToolCallRecord> toolCallRecords = new ArrayList<>();
 
         int maxRounds = aiConfig.getAgent().getMaxConversationRounds();
-        String currentMessage = request.getMessage();
+        String currentMessage = userMessage;
 
         // ═══ Agent 核心循环 ═══
         for (int round = 0; round < maxRounds; round++) {
@@ -127,10 +130,15 @@ public class AgentRuntime {
             List<Map<String, Object>> toolDefs = enableTools(request)
                     ? toolRegistry.getToolDefinitionsForLLM() : List.of();
 
-            // Step B: 调用 LLM (每轮都带 tools + history)
+            // Step B: 调用 LLM — 首轮有图片则多模态
             String llmResponse;
             try {
-                if (round == 0) {
+                if (round == 0 && !images.isEmpty()) {
+                    // 多模态模式：LLM 直接看到图片 + 文字（DeepSeek 不支持则自动回退 OpenAI）
+                    llmResponse = orchestrator.chatWithToolsAndImages(
+                            systemPrompt, currentMessage, toolDefs, images)
+                            .get(aiConfig.getAgent().getToolCallTimeout(), TimeUnit.MILLISECONDS);
+                } else if (round == 0) {
                     llmResponse = provider.chatCompletionWithTools(systemPrompt, currentMessage, toolDefs)
                             .get(aiConfig.getAgent().getToolCallTimeout(), TimeUnit.MILLISECONDS);
                 } else {
@@ -141,7 +149,13 @@ public class AgentRuntime {
             } catch (Exception e) {
                 log.error("LLM调用失败 round={}", round, e);
                 state.done = true;
-                state.finalAnswer = "抱歉，AI服务暂时不可用: " + e.getMessage();
+                String errMsg = e.getMessage();
+                if (errMsg == null || errMsg.isBlank()) {
+                    errMsg = e.getClass().getSimpleName()
+                            + (e.getCause() != null ? ": " + e.getCause().getMessage() : "");
+                    if (errMsg.endsWith(": null")) errMsg = e.getClass().getSimpleName();
+                }
+                state.finalAnswer = "抱歉，AI服务暂时不可用: " + errMsg;
                 break;
             }
 
@@ -150,7 +164,7 @@ public class AgentRuntime {
                     Map.of("session_id", sessionId));
 
             if (toolResult.success() && toolResult.toolName() != null) {
-                // ── 有工具调用: 执行并继续循环 ──
+                // ── 有工具调用 ──
 
                 log.info("工具调用: {} round={}", toolResult.toolName(), round);
 
@@ -163,18 +177,30 @@ public class AgentRuntime {
                         .durationMs(toolResult.durationMs())
                         .build());
 
-                // 将工具结果注入对话历史
-                conversationManager.addToolMessage(sessionId, "assistant",
-                        "调用工具 " + toolResult.toolName(),
-                        toolResult.toolName(), toolResult.output());
+                // 判断是否为"终点型"工具（多模态生成类），直接返回结果给用户
+                boolean isTerminalTool = toolRegistry.getTool(toolResult.toolName()) != null
+                        && "MULTIMODAL".equals(toolRegistry.getTool(toolResult.toolName()).getCategory());
 
-                // 如果有工具执行文本上下文, 作为下一轮输入
-                if (toolResult.output() != null && !toolResult.output().isBlank()) {
-                    currentMessage = "工具 " + toolResult.toolName() + " 返回结果:\n"
-                            + (toolResult.output().length() > 3000
-                            ? toolResult.output().substring(0, 3000) + "..."
-                            : toolResult.output())
-                            + "\n\n请基于以上结果继续处理。";
+                if (isTerminalTool && toolResult.output() != null && !toolResult.output().isBlank()) {
+                    // 图片生成/识别等：工具输出直接作为最终答案，不让 LLM 再处理一遍
+                    state.finalAnswer = toolResult.output();
+                    state.done = true;
+                    state.answerSaved = true;
+                    conversationManager.addMessage(sessionId, "assistant", state.finalAnswer,
+                            modelUsed, System.currentTimeMillis() - startTime);
+                } else {
+                    // 普通工具：将结果注入对话继续循环
+                    conversationManager.addToolMessage(sessionId, "assistant",
+                            "调用工具 " + toolResult.toolName(),
+                            toolResult.toolName(), toolResult.output());
+
+                    if (toolResult.output() != null && !toolResult.output().isBlank()) {
+                        currentMessage = "工具 " + toolResult.toolName() + " 返回结果:\n"
+                                + (toolResult.output().length() > 3000
+                                ? toolResult.output().substring(0, 3000) + "..."
+                                : toolResult.output())
+                                + "\n\n请基于以上结果继续处理。";
+                    }
                 }
 
                 state.roundsExecuted = round + 1;
@@ -215,9 +241,11 @@ public class AgentRuntime {
                     + ")，任务可能过于复杂。请尝试拆分为更小的步骤。";
         }
 
-        // 保存最终回答到对话历史
-        conversationManager.addMessage(sessionId, "assistant", state.finalAnswer,
-                modelUsed, System.currentTimeMillis() - startTime);
+        // 保存最终回答到对话历史（终端工具已保存则跳过）
+        if (!state.answerSaved) {
+            conversationManager.addMessage(sessionId, "assistant", state.finalAnswer,
+                    modelUsed, System.currentTimeMillis() - startTime);
+        }
 
         // 从对话中学习 (新记忆)
         if (enableTools(request) && !toolCallRecords.isEmpty()) {
@@ -292,14 +320,6 @@ public class AgentRuntime {
             return ((List<String>) imgs);
         }
         return List.of();
-    }
-
-    private String buildImageAwareMessage(String originalMessage, List<String> images) {
-        if (images.isEmpty()) return originalMessage;
-        String base = originalMessage != null && !originalMessage.isBlank()
-                ? originalMessage : "请分析上传的图片";
-        return base + "\n\n[系统提示: 用户上传了 " + images.size()
-                + " 张图片。请调用 image_understand 工具逐张分析。图片数据可通过 0-based 索引引用]";
     }
 
     /** 获取会话的临时图片 (供 Tool 使用) */
@@ -398,6 +418,7 @@ public class AgentRuntime {
         boolean done = false;
         String finalAnswer;
         int roundsExecuted = 0;
+        boolean answerSaved = false;  // 防止 MULTIMODAL 路径重复存入对话历史
 
         ExecutionState(String sessionId, LLMProvider provider, String modelUsed, long startTime) {
             this.sessionId = sessionId;

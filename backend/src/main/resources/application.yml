@@ -33,9 +33,9 @@ spring:
 ai:
   providers:
     openai:
-      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
-      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
-      model: ${DEEPSEEK_MODEL:deepseek-chat}
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      model: ${OPENAI_MODEL:gpt-5.5}
       max-tokens: 4096
       temperature: 0.7
     deepseek:
@@ -44,18 +44,16 @@ ai:
       model: deepseek-chat
       max-tokens: 4096
       temperature: 0.7
+    # 图片生成 — 复用 OPENAI_API_KEY，使用专用图片模型
     image-gen:
       enabled: ${IMAGE_GEN_ENABLED:false}
-      api-key: ${IMAGE_GEN_API_KEY:sk-placeholder}
-      base-url: ${IMAGE_GEN_BASE_URL:https://dashscope.aliyuncs.com}
-      model: ${IMAGE_GEN_MODEL:wanx2.1-t2i-turbo}
-      size: ${IMAGE_GEN_SIZE:1024*1024}
-      style: auto
+      model: ${IMAGE_GEN_MODEL:gpt-image-2}
+      size: ${IMAGE_GEN_SIZE:1024x1024}
       n: 1
   agent:
     max-conversation-rounds: 10
     context-window-size: 20
-    tool-call-timeout: 30000
+    tool-call-timeout: 120000
   rag:
     max-results: 5
     min-score: 0.6
