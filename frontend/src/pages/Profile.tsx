@@ -15,7 +15,6 @@ interface ProfileForm {
   id?: number
   username: string
   role: string
-  displayName: string
   email: string
   qqEmail: string
   avatarUrl: string
@@ -29,7 +28,6 @@ interface ProfileForm {
 const emptyProfile: ProfileForm = {
   username: "",
   role: "",
-  displayName: "",
   email: "",
   qqEmail: "",
   avatarUrl: "",
@@ -93,7 +91,7 @@ export default function Profile() {
   }
 
   const syncProfileStorage = (data: ProfileForm) => {
-    localStorage.setItem("jc-display-login-account", data.displayName || data.username || "")
+    localStorage.setItem("jc-display-login-account", data.username || "")
     localStorage.setItem("jc-display-login-role", data.role || "")
     window.dispatchEvent(new Event("jc-auth-profile-updated"))
   }
@@ -106,7 +104,15 @@ export default function Profile() {
     setSaving(true)
     setMessage("")
     try {
-      const { data } = await api.put("/auth/profile", profile)
+      const payload = {
+        username: profile.username,
+        email: profile.email,
+        companyName: profile.companyName,
+        department: profile.department,
+        jobTitle: profile.jobTitle,
+        phone: profile.phone,
+      }
+      const { data } = await api.put("/auth/profile", payload)
       if (data.token) localStorage.setItem("jc-auth-token", data.token)
       const next = { ...emptyProfile, ...data }
       setProfile(next)
@@ -204,7 +210,7 @@ export default function Profile() {
     }
   }
 
-  const avatarText = String(profile.displayName || profile.username || "U").slice(0, 1).toUpperCase()
+  const avatarText = String(profile.username || "U").slice(0, 1).toUpperCase()
   const createdText = profile.createdAt
     ? new Date(profile.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })
     : "暂无记录"
@@ -216,9 +222,9 @@ export default function Profile() {
           <div className="flex flex-col items-center text-center">
             <AvatarPreview avatarUrl={profile.avatarUrl} avatarText={avatarText} size="large" />
             <h1 className="mt-5 max-w-full truncate text-2xl font-black tracking-tight text-[var(--ui-text)]">
-              {profile.displayName || profile.username || "个人信息"}
+              {profile.username || "个人信息"}
             </h1>
-            <p className="mt-2 text-sm font-semibold text-[var(--ui-text-muted)]">{profile.username || "未登录"}</p>
+            <p className="mt-2 text-sm font-semibold text-[var(--ui-text-muted)]">账号 ID：{profile.id || "暂无"}</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               <Badge variant={profile.role === "admin" ? "warning" : "secondary"}>{profile.role === "admin" ? "管理员" : "普通用户"}</Badge>
               <Badge variant="success">已启用</Badge>
@@ -240,7 +246,7 @@ export default function Profile() {
             <div className="min-w-0 flex-1">
               <h2 className="text-base font-black text-[var(--ui-text)]">主题切换</h2>
               <p className="mt-1 text-xs leading-relaxed text-[var(--ui-text-muted)]">
-                白色主题保持纯净浅色，黑色主题以黑色为主、绿色作为辅助状态色。
+                白色主题使用黑色字体，黑色主题使用白色字体，绿色只作为按钮与状态点缀。
               </p>
             </div>
           </div>
@@ -249,7 +255,7 @@ export default function Profile() {
             onClick={toggleTheme}
             className="mt-4 flex h-12 w-full items-center justify-between rounded-[8px] bg-[var(--ui-button-primary-bg)] px-4 text-sm font-black text-[var(--ui-button-primary-fg)] transition-colors hover:bg-[var(--ui-button-primary-hover)] active:translate-y-px"
           >
-            <span>{isDark ? "切换浅色主题" : "启用黑色主题"}</span>
+            <span>{isDark ? "切换白色主题" : "启用黑色主题"}</span>
             {isDark ? <SunMedium size={17} /> : <Moon size={17} />}
           </button>
         </section>
@@ -276,7 +282,7 @@ export default function Profile() {
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.08em] text-[var(--ui-text-muted)]">Profile</p>
               <h2 className="mt-1 text-xl font-black text-[var(--ui-text)]">资料与用户名</h2>
-              <p className="mt-1 text-sm text-[var(--ui-text-muted)]">用户名保存后会刷新登录 Token，显示名称会同步到右上角账号面板。</p>
+              <p className="mt-1 text-sm text-[var(--ui-text-muted)]">系统只保留一个用户名。对话归属绑定账号 ID，改名不会丢失历史记录。</p>
             </div>
             <Button onClick={saveProfile} disabled={saving || loading || usernameStatus === "用户名已被使用"} className="rounded-[8px]">
               <Save size={14} />
@@ -288,9 +294,6 @@ export default function Profile() {
             <FormField label="用户名">
               <Input value={profile.username} onChange={(event) => updateField("username", event.target.value)} className="auth-input" placeholder="输入用户名" />
               {usernameStatus && <p className={cn("mt-2 text-xs font-black", usernameStatus === "用户名可用" ? "text-[#1F5F53]" : "text-destructive")}>{usernameStatus}</p>}
-            </FormField>
-            <FormField label="显示名称">
-              <Input value={profile.displayName} onChange={(event) => updateField("displayName", event.target.value)} className="auth-input" placeholder="输入显示名称" />
             </FormField>
             <FormField label="联系邮箱">
               <Input value={profile.email} onChange={(event) => updateField("email", event.target.value)} className="auth-input" placeholder="业务联系邮箱" />

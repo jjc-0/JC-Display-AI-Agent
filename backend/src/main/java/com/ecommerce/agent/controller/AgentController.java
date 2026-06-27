@@ -3,6 +3,7 @@ package com.ecommerce.agent.controller;
 import com.ecommerce.agent.agent.AgentRuntime;
 import com.ecommerce.agent.agent.ConversationManager;
 import com.ecommerce.agent.config.AIConfig;
+import com.ecommerce.agent.config.AuthUser;
 import com.ecommerce.agent.llm.MultiModelOrchestrator;
 import com.ecommerce.agent.llm.PromptTemplateManager;
 import com.ecommerce.agent.model.*;
@@ -68,14 +69,22 @@ public class AgentController {
         String sessionId = (String) body.getOrDefault("sessionId", null);
         String message = (String) body.getOrDefault("message", "");
         boolean enableTools = Boolean.TRUE.equals(body.get("enableTools"));
+        String stableUserId = AuthUser.stableUserId(authentication);
+
+        if (sessionId != null && !sessionId.isBlank()
+                && conversationManager.sessionExists(sessionId)
+                && !conversationManager.isSessionOwnedBy(sessionId, stableUserId)
+                && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权继续该对话"));
+        }
 
         AgentRequest request = AgentRequest.builder()
             .sessionId(sessionId)
             .taskType("chat")
             .message(message)
             .enableTools(enableTools)
-            .userId(currentUsername(authentication))
-            .username(currentUsername(authentication))
+            .userId(stableUserId)
+            .username(AuthUser.username(authentication))
             .build();
 
         AgentResponse response = agentRuntime.execute(request);
@@ -108,7 +117,57 @@ public class AgentController {
     }
 
     @GetMapping("/sessions")
-    public ResponseEntity<Map<String, Object>> getSessions(@RequestParam(required = false) String type) {
+    public ResponseEntity<Map<String, Object>> getSessions(@RequestParam(required = false) String type,
+                                                           Authentication authentication) {
+        List<Map<String, Object>> sessions;
+        if (isAdmin(authentication)) {
+            if (type != null && !type.isEmpty()) {
+                sessions = conversationManager.getSessionList(type);
+            } else {
+                sessions = conversationManager.getSessionList();
+            }
+        } else if (type != null && !type.isEmpty()) {
+            sessions = conversationManager.getSessionListForUser(AuthUser.stableUserId(authentication), type);
+        } else {
+            sessions = conversationManager.getSessionListForUser(AuthUser.stableUserId(authentication), null);
+        }
+
+        List<Map<String, Object>> enriched = sessions.stream().map(s -> {
+            Map<String, Object> m = new LinkedHashMap<>(s);
+            String sid = (String) s.get("sessionId");
+            String opType = (String) s.get("operationType");
+            String title = (String) s.get("title");
+
+            // 寰俊浼氳瘽缁熶竴鏄剧ず"寰俊瀵硅瘽"锛岄伩鍏?ID 涔辩爜
+            if (sid != null && sid.startsWith("wx_")) {
+                title = "寰俊瀵硅瘽";
+                m.put("title", title);
+                opType = "wechat";
+            }
+
+            if (opType == null || opType.isBlank()) {
+                opType = inferType(title);
+            }
+            m.put("type", opType);
+            m.put("modelUsed", "deepseek-chat");
+
+            List<ConversationRecord> records = conversationManager.getDBHistory(sid);
+            if (!records.isEmpty()) {
+                ConversationRecord last = records.get(records.size() - 1);
+                m.put("modelUsed", last.getModelUsed() != null ? last.getModelUsed() : "deepseek-chat");
+            }
+            return m;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(Map.of("sessions", enriched));
+    }
+
+    @GetMapping("/sessions/all")
+    public ResponseEntity<Map<String, Object>> getAllSessions(@RequestParam(required = false) String type,
+                                                              Authentication authentication) {
+        if (!isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权查看全局会话"));
+        }
         List<Map<String, Object>> sessions;
         if (type != null && !type.isEmpty()) {
             sessions = conversationManager.getSessionList(type);
@@ -147,7 +206,11 @@ public class AgentController {
     }
 
     @GetMapping("/session/{sessionId}/history")
-    public ResponseEntity<Map<String, Object>> getHistory(@PathVariable String sessionId) {
+    public ResponseEntity<Map<String, Object>> getHistory(@PathVariable String sessionId,
+                                                          Authentication authentication) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, AuthUser.stableUserId(authentication)) && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权查看该对话记录"));
+        }
         List<ConversationMessage> history = conversationManager.getHistory(sessionId);
         return ResponseEntity.ok(Map.of("records", history.stream().map(msg -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -161,7 +224,11 @@ public class AgentController {
     }
 
     @GetMapping("/session/{sessionId}/history/db")
-    public ResponseEntity<Map<String, Object>> getDBHistory(@PathVariable String sessionId) {
+    public ResponseEntity<Map<String, Object>> getDBHistory(@PathVariable String sessionId,
+                                                            Authentication authentication) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, AuthUser.stableUserId(authentication)) && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权查看该对话记录"));
+        }
         List<ConversationRecord> records = conversationManager.getDBHistory(sessionId);
         return ResponseEntity.ok(Map.of("records", records.stream().map(r -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -180,7 +247,7 @@ public class AgentController {
     public ResponseEntity<Map<String, Object>> updateTitle(@PathVariable String sessionId,
                                                             @RequestBody Map<String, String> body,
                                                             Authentication authentication) {
-        if (!conversationManager.isSessionOwnedBy(sessionId, currentUsername(authentication)) && !isAdmin(authentication)) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, AuthUser.stableUserId(authentication)) && !isAdmin(authentication)) {
             return ResponseEntity.status(403).body(Map.of("message", "无权修改该对话标题"));
         }
         conversationManager.updateSessionTitle(sessionId, body.get("title"));
@@ -188,7 +255,11 @@ public class AgentController {
     }
 
     @PostMapping("/session/{sessionId}/auto-title")
-    public ResponseEntity<Map<String, Object>> autoTitle(@PathVariable String sessionId) {
+    public ResponseEntity<Map<String, Object>> autoTitle(@PathVariable String sessionId,
+                                                         Authentication authentication) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, AuthUser.stableUserId(authentication)) && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权修改该对话标题"));
+        }
         List<ConversationRecord> records = conversationManager.getDBHistory(sessionId);
         if (records.isEmpty()) {
             return ResponseEntity.ok(Map.of("success", false, "title", "空对话"));
@@ -233,7 +304,11 @@ public class AgentController {
     }
 
     @PostMapping("/session/{sessionId}/clear")
-    public ResponseEntity<Map<String, Object>> clearSession(@PathVariable String sessionId) {
+    public ResponseEntity<Map<String, Object>> clearSession(@PathVariable String sessionId,
+                                                            Authentication authentication) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, AuthUser.stableUserId(authentication)) && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权清空该对话"));
+        }
         conversationManager.clearSession(sessionId);
         return ResponseEntity.ok(Map.of("success", true));
     }
@@ -561,10 +636,6 @@ public class AgentController {
                 || t.contains("seo") || t.contains("competitor"))       return "analysis";
         if (t.contains("image") || t.contains("识图") || t.contains("recognition")) return "image-recognition";
         return "chat";
-    }
-
-    private String currentUsername(Authentication authentication) {
-        return authentication != null ? authentication.getName() : "user";
     }
 
     private boolean isAdmin(Authentication authentication) {

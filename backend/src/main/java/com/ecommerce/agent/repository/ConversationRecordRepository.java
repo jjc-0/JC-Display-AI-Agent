@@ -19,8 +19,6 @@ public interface ConversationRecordRepository extends JpaRepository<Conversation
 
     List<ConversationRecord> findByUserIdOrderByCreatedAtDesc(String userId);
 
-    List<ConversationRecord> findByUsernameOrderByCreatedAtDesc(String username);
-
     @Query("SELECT r FROM ConversationRecord r WHERE r.sessionId = :sessionId ORDER BY r.createdAt ASC")
     List<ConversationRecord> findHistoryForLLM(@Param("sessionId") String sessionId);
 

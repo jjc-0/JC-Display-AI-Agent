@@ -367,11 +367,11 @@ public class ConversationManager {
         }
     }
 
-    public boolean isSessionOwnedBy(String sessionId, String username) {
-        if (!isDbAvailable() || sessionId == null || username == null || username.isBlank()) return false;
+    public boolean isSessionOwnedBy(String sessionId, String userId) {
+        if (!isDbAvailable() || sessionId == null || userId == null || userId.isBlank()) return false;
         try {
             return sessionRepository.findBySessionId(sessionId)
-                    .map(session -> username.equals(session.getUsername()) || username.equals(session.getUserId()))
+                    .map(session -> userId.equals(session.getUserId()))
                     .orElse(false);
         } catch (Exception e) {
             log.warn("Session owner check failed: {}", e.getMessage());

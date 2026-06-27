@@ -35,7 +35,6 @@ interface SessionItem {
 
 interface UserProfile {
   username?: string
-  displayName?: string
   email?: string
   role?: string
   avatarUrl?: string
@@ -44,7 +43,7 @@ interface UserProfile {
 
 const SIDEBAR_W = 224
 const SIDEBAR_COLLAPSED_W = 76
-const MAX_SESSIONS = 12
+const MAX_SESSIONS = 80
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -96,10 +95,10 @@ export default function Layout() {
     try {
       const { data } = await api.get("/auth/me")
       setProfile(data)
-      const displayName = data.displayName || data.username || ""
-      setAuthAccount(displayName)
+      const username = data.username || ""
+      setAuthAccount(username)
       setAuthRole(data.role || "")
-      localStorage.setItem("jc-display-login-account", displayName)
+      localStorage.setItem("jc-display-login-account", username)
       localStorage.setItem("jc-display-login-role", data.role || "")
     } catch {
       setProfile(null)
@@ -221,7 +220,7 @@ export default function Layout() {
               )}
             </div>
 
-            <div className="space-y-0.5">
+            <div className={cn("space-y-0.5", !sidebarCollapsed && sessions.length > 8 && "max-h-[416px] overflow-y-auto pr-1")}>
               {loadingSessions ? (
                 <div className="flex justify-center py-4">
                   <Loader2 size={14} className="animate-spin text-[var(--ui-text-muted)]" />

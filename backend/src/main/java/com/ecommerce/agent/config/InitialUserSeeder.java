@@ -19,16 +19,13 @@ public class InitialUserSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        upsertUser("user1", "123456", "user");
-        upsertUser("admin", "1221jjc0", "admin");
+        if (userRepository.count() == 0) {
+            createInitialAdmin();
+        }
     }
 
-    private void upsertUser(String username, String rawPassword, String role) {
-        if (userRepository.findByUsername(username).isPresent()) {
-            return;
-        }
-
-        User user = new User(username, passwordEncoder.encode(rawPassword), role);
+    private void createInitialAdmin() {
+        User user = new User("admin", passwordEncoder.encode("1221jjc0"), "admin");
         userRepository.save(user);
     }
 }

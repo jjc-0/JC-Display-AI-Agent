@@ -46,24 +46,48 @@ public class UserAccountMigration implements ApplicationRunner {
     }
 
     private void migrateConversationOwners() {
-        String fallbackUsername = userRepository.findByUsername("admin")
-                .map(User::getUsername)
-                .orElseGet(() -> userRepository.findAll().stream().findFirst().map(User::getUsername).orElse("user"));
-
         for (ConversationSession session : sessionRepository.findAll()) {
-            if (session.getUsername() == null || session.getUsername().isBlank()) {
-                session.setUsername(fallbackUsername);
-                session.setUserId(fallbackUsername);
+            User owner = resolveOwner(session.getUserId(), session.getUsername());
+            if (owner != null) {
+                session.setUserId(String.valueOf(owner.getId()));
+                session.setUsername(owner.getUsername());
+                sessionRepository.save(session);
+            } else if (hasLegacyOwnerHint(session.getUserId(), session.getUsername())) {
+                session.setUserId(null);
+                session.setUsername(null);
                 sessionRepository.save(session);
             }
         }
 
         for (ConversationRecord record : recordRepository.findAll()) {
-            if (record.getUsername() == null || record.getUsername().isBlank()) {
-                record.setUsername(fallbackUsername);
-                record.setUserId(fallbackUsername);
+            User owner = resolveOwner(record.getUserId(), record.getUsername());
+            if (owner != null) {
+                record.setUserId(String.valueOf(owner.getId()));
+                record.setUsername(owner.getUsername());
+                recordRepository.save(record);
+            } else if (hasLegacyOwnerHint(record.getUserId(), record.getUsername())) {
+                record.setUserId(null);
+                record.setUsername(null);
                 recordRepository.save(record);
             }
         }
+    }
+
+    private User resolveOwner(String userId, String username) {
+        if (userId != null && userId.matches("^\\d+$")) {
+            return userRepository.findById(Long.parseLong(userId)).orElse(null);
+        }
+        if (username != null && !username.isBlank()) {
+            return userRepository.findByUsername(username).orElse(null);
+        }
+        if (userId != null && !userId.isBlank()) {
+            return userRepository.findByUsername(userId).orElse(null);
+        }
+        return null;
+    }
+
+    private boolean hasLegacyOwnerHint(String userId, String username) {
+        return (userId != null && !userId.isBlank() && !userId.matches("^\\d+$"))
+                || (userId == null || userId.isBlank()) && username != null && !username.isBlank();
     }
 }

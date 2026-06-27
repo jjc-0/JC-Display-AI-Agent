@@ -17,8 +17,6 @@ public interface ConversationSessionRepository extends JpaRepository<Conversatio
 
     List<ConversationSession> findByUserIdOrderByUpdatedAtDesc(String userId);
 
-    List<ConversationSession> findByUsernameOrderByUpdatedAtDesc(String username);
-
     List<ConversationSession> findByOperationTypeOrderByUpdatedAtDesc(String operationType);
 
     List<ConversationSession> findByUserIdAndOperationTypeOrderByUpdatedAtDesc(String userId, String operationType);

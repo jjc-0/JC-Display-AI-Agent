@@ -39,7 +39,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import api from "@/lib/api"
-import { cn } from "@/lib/utils"
 
 type Role = "admin" | "user"
 
@@ -57,7 +56,6 @@ interface AdminUser {
   id: number
   username: string
   role: Role
-  displayName: string
   email?: string
   companyName?: string
   department?: string
@@ -111,7 +109,7 @@ export default function AdminUsers() {
     const keyword = query.trim().toLowerCase()
     if (!keyword) return users
     return users.filter((user) =>
-      [user.username, user.displayName, user.email, user.companyName, user.department, user.jobTitle]
+      [user.username, user.email, user.companyName, user.department, user.jobTitle, String(user.id)]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(keyword))
     )
@@ -136,12 +134,12 @@ export default function AdminUsers() {
       const { data } = await api.get("/admin/overview")
       setStats({ ...emptyStats, ...(data || {}) })
     } catch {
-      // 用户列表仍然可用时，不用打断当前操作。
+      // 用户列表仍然可用时，不打断当前操作。
     }
   }
 
   const deleteUser = async (user: AdminUser) => {
-    if (!window.confirm(`确定删除用户「${user.displayName || user.username}」吗？该操作不可恢复。`)) return
+    if (!window.confirm(`确定删除用户「${user.username}」吗？该操作不可恢复。`)) return
     setSavingId(user.id)
     setError("")
     try {
@@ -197,7 +195,7 @@ export default function AdminUsers() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="pl-9"
-              placeholder="搜索用户名、邮箱、公司"
+              placeholder="搜索用户名、邮箱、公司或 ID"
             />
           </div>
         </CardHeader>
@@ -237,11 +235,11 @@ export default function AdminUsers() {
                     <TableCell>
                       <div className="flex min-w-[220px] items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--ui-border-accent)] bg-[var(--ui-accent)] text-sm font-black text-[var(--ui-accent-strong)]">
-                          {(user.displayName || user.username).slice(0, 1).toUpperCase()}
+                          {user.username.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate font-black text-[var(--ui-text)]">{user.displayName || user.username}</div>
-                          <div className="truncate text-xs text-[var(--ui-text-muted)]">{user.username} {user.email ? `· ${user.email}` : ""}</div>
+                          <div className="truncate font-black text-[var(--ui-text)]">{user.username}</div>
+                          <div className="truncate text-xs text-[var(--ui-text-muted)]">ID {user.id}{user.email ? ` · ${user.email}` : ""}</div>
                           {(user.companyName || user.department || user.jobTitle) && (
                             <div className="mt-1 truncate text-[11px] text-[var(--ui-text-muted)]">
                               {[user.companyName, user.department, user.jobTitle].filter(Boolean).join(" / ")}
@@ -318,7 +316,7 @@ export default function AdminUsers() {
           <DialogHeader>
             <DialogTitle>重置用户密码</DialogTitle>
             <DialogDescription>
-              为 {passwordDialog?.displayName || passwordDialog?.username} 设置新密码，至少 6 位。
+              为 {passwordDialog?.username} 设置新密码，至少 6 位。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

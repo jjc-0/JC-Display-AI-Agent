@@ -20,9 +20,6 @@ public class User {
     @Column(nullable = false, length = 20)
     private String role;
 
-    @Column(length = 80)
-    private String displayName;
-
     @Column(length = 120)
     private String email;
 
@@ -60,9 +57,6 @@ public class User {
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = this.createdAt;
-        if (this.displayName == null || this.displayName.isBlank()) {
-            this.displayName = this.username;
-        }
     }
 
     @PreUpdate
@@ -89,9 +83,6 @@ public class User {
 
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
-
-    public String getDisplayName() { return displayName; }
-    public void setDisplayName(String displayName) { this.displayName = displayName; }
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }

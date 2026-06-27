@@ -1,6 +1,7 @@
 package com.ecommerce.agent.controller;
 
 import com.ecommerce.agent.agent.*;
+import com.ecommerce.agent.config.AuthUser;
 import com.ecommerce.agent.model.AgentRequest;
 import com.ecommerce.agent.model.AgentResponse;
 import com.ecommerce.agent.model.ConversationMessage;
@@ -74,6 +75,14 @@ public class V2AgentController {
         String sessionId = (String) body.getOrDefault("sessionId", null);
         boolean enableTools = Boolean.TRUE.equals(body.get("enableTools"));
         String customerId = (String) body.get("customerId");
+        String stableUserId = AuthUser.stableUserId(authentication);
+
+        if (sessionId != null && !sessionId.isBlank()
+                && conversationManager.sessionExists(sessionId)
+                && !conversationManager.isSessionOwnedBy(sessionId, stableUserId)
+                && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权继续该对话"));
+        }
 
         @SuppressWarnings("unchecked")
         Map<String, Object> params = new LinkedHashMap<>();
@@ -92,8 +101,8 @@ public class V2AgentController {
                 .taskType("chat")
                 .enableTools(enableTools)
                 .parameters(params)
-                .userId(currentUsername(authentication))
-                .username(currentUsername(authentication))
+                .userId(stableUserId)
+                .username(AuthUser.username(authentication))
                 .build();
 
         AgentResponse response = agentRuntime.execute(request);
@@ -289,7 +298,7 @@ public class V2AgentController {
     @GetMapping("/sessions/{sessionId}/history")
     public ResponseEntity<Map<String, Object>> getHistory(@PathVariable String sessionId,
                                                           Authentication authentication) {
-        if (!conversationManager.isSessionOwnedBy(sessionId, currentUsername(authentication)) && !isAdmin(authentication)) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, AuthUser.stableUserId(authentication)) && !isAdmin(authentication)) {
             return ResponseEntity.status(403).body(Map.of("message", "无权查看该对话记录"));
         }
         List<ConversationMessage> history = conversationManager.getHistory(sessionId);
@@ -306,8 +315,7 @@ public class V2AgentController {
     @GetMapping("/sessions")
     public ResponseEntity<Map<String, Object>> getMySessions(@RequestParam(required = false) String type,
                                                              Authentication authentication) {
-        String username = currentUsername(authentication);
-        return ResponseEntity.ok(Map.of("sessions", conversationManager.getSessionListForUser(username, type)));
+        return ResponseEntity.ok(Map.of("sessions", conversationManager.getSessionListForUser(AuthUser.stableUserId(authentication), type)));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -336,10 +344,6 @@ public class V2AgentController {
         m.put("toolCalls", tc);
         if (r.getMetadata() != null) m.putAll(r.getMetadata());
         return m;
-    }
-
-    private String currentUsername(Authentication authentication) {
-        return authentication != null ? authentication.getName() : "user";
     }
 
     private boolean isAdmin(Authentication authentication) {

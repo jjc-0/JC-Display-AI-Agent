@@ -36,13 +36,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring("Bearer ".length()).trim();
             if (jwtUtil.validateToken(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
+                Long userId = jwtUtil.getUserIdFromToken(token);
                 String username = jwtUtil.getUsernameFromToken(token);
-                Optional<User> user = userRepository.findByUsername(username);
+                Optional<User> user = userId != null
+                        ? userRepository.findById(userId)
+                        : userRepository.findByUsername(username);
                 if (user.isPresent() && user.get().isEnabled()) {
                     String role = normalizeRole(user.get().getRole());
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
-                                    user.get().getUsername(),
+                                    user.get(),
                                     null,
                                     List.of(new SimpleGrantedAuthority("ROLE_" + role))
                             );

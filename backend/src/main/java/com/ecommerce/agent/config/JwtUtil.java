@@ -22,16 +22,22 @@ public class JwtUtil {
     }
 
     public String generateToken(String username, String role) {
+        return generateToken(null, username, role);
+    }
+
+    public String generateToken(Long userId, String username, String role) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(username)
                 .claim("role", role)
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(key)
-                .compact();
+                .expiration(expiry);
+        if (userId != null) {
+            builder.claim("userId", userId);
+        }
+        return builder.signWith(key).compact();
     }
 
     public String getUsernameFromToken(String token) {
@@ -40,6 +46,17 @@ public class JwtUtil {
 
     public String getRoleFromToken(String token) {
         return parseClaims(token).get("role", String.class);
+    }
+
+    public Long getUserIdFromToken(String token) {
+        Object value = parseClaims(token).get("userId");
+        if (value == null) return null;
+        if (value instanceof Number number) return number.longValue();
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     public boolean validateToken(String token) {

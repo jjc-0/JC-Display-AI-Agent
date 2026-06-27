@@ -224,7 +224,6 @@ public class AuthController {
             user.setUsername(username);
             usernameChanged = true;
         }
-        user.setDisplayName(clean(body.get("displayName"), 80));
         user.setEmail(clean(body.get("email"), 120));
         user.setCompanyName(clean(body.get("companyName"), 120));
         user.setDepartment(clean(body.get("department"), 80));
@@ -234,7 +233,7 @@ public class AuthController {
 
         Map<String, Object> profile = toProfile(user);
         if (usernameChanged) {
-            profile.put("token", jwtUtil.generateToken(user.getUsername(), user.getRole()));
+            profile.put("token", jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole()));
         }
         return ResponseEntity.ok(profile);
     }
@@ -336,7 +335,7 @@ public class AuthController {
     }
 
     private AuthResponse authResponse(User user) {
-        return new AuthResponse(jwtUtil.generateToken(user.getUsername(), user.getRole()), user.getUsername(), user.getRole());
+        return new AuthResponse(jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole()), user.getUsername(), user.getRole());
     }
 
     private Optional<User> currentUser(String authorization) {
@@ -347,6 +346,10 @@ public class AuthController {
         if (!jwtUtil.validateToken(token)) {
             return Optional.empty();
         }
+        Long userId = jwtUtil.getUserIdFromToken(token);
+        if (userId != null) {
+            return userRepository.findById(userId);
+        }
         return userRepository.findByUsername(jwtUtil.getUsernameFromToken(token));
     }
 
@@ -355,7 +358,6 @@ public class AuthController {
         profile.put("id", user.getId());
         profile.put("username", user.getUsername());
         profile.put("role", user.getRole());
-        profile.put("displayName", valueOrDefault(user.getDisplayName(), user.getUsername()));
         profile.put("email", valueOrDefault(user.getEmail(), ""));
         profile.put("qqEmail", valueOrDefault(user.getQqEmail(), ""));
         profile.put("avatarUrl", valueOrDefault(user.getAvatarUrl(), ""));

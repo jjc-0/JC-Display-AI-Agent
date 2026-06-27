@@ -70,9 +70,6 @@ public class AdminController {
             }
             user.setEnabled(enabled);
         }
-        if (body.containsKey("displayName")) {
-            user.setDisplayName(clean(body.get("displayName"), 80));
-        }
         if (body.containsKey("password")) {
             String password = clean(body.get("password"), 120);
             if (!password.isBlank()) {
@@ -107,9 +104,11 @@ public class AdminController {
     }
 
     @GetMapping("/conversations")
-    public ResponseEntity<Map<String, Object>> conversations(@RequestParam(required = false) String username) {
+    public ResponseEntity<Map<String, Object>> conversations(@RequestParam(required = false) String userId) {
+        boolean hasUserFilter = userId != null && !userId.isBlank();
+
         List<Map<String, Object>> sessions = sessionRepository.findAllByOrderByUpdatedAtDesc().stream()
-                .filter(session -> username == null || username.isBlank() || Objects.equals(username, session.getUsername()))
+                .filter(session -> !hasUserFilter || Objects.equals(userId, session.getUserId()))
                 .map(session -> {
                     Map<String, Object> item = new LinkedHashMap<>();
                     item.put("sessionId", session.getSessionId());
@@ -125,7 +124,7 @@ public class AdminController {
                 .toList();
 
         List<Map<String, Object>> records = recordRepository.findAll().stream()
-                .filter(record -> username == null || username.isBlank() || Objects.equals(username, record.getUsername()))
+                .filter(record -> !hasUserFilter || Objects.equals(userId, record.getUserId()))
                 .sorted((a, b) -> {
                     if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
                     if (a.getCreatedAt() == null) return 1;
@@ -154,8 +153,8 @@ public class AdminController {
         List<Map<String, Object>> users = userRepository.findAll().stream()
                 .map(user -> {
                     Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", user.getId());
                     item.put("username", user.getUsername());
-                    item.put("displayName", valueOrDefault(user.getDisplayName(), user.getUsername()));
                     item.put("role", user.getRole());
                     item.put("enabled", user.isEnabled());
                     return item;
@@ -163,9 +162,9 @@ public class AdminController {
                 .toList();
 
         Map<String, Long> sessionsByUser = sessions.stream()
-                .collect(Collectors.groupingBy(item -> valueOrDefault((String) item.get("username"), "未归属"), LinkedHashMap::new, Collectors.counting()));
+                .collect(Collectors.groupingBy(item -> displayOwner(item.get("userId"), item.get("username")), LinkedHashMap::new, Collectors.counting()));
         Map<String, Long> recordsByUser = records.stream()
-                .collect(Collectors.groupingBy(item -> valueOrDefault((String) item.get("username"), "未归属"), LinkedHashMap::new, Collectors.counting()));
+                .collect(Collectors.groupingBy(item -> displayOwner(item.get("userId"), item.get("username")), LinkedHashMap::new, Collectors.counting()));
 
         return ResponseEntity.ok(Map.of(
                 "users", users,
@@ -208,7 +207,6 @@ public class AdminController {
         item.put("id", user.getId());
         item.put("username", user.getUsername());
         item.put("role", user.getRole());
-        item.put("displayName", valueOrDefault(user.getDisplayName(), user.getUsername()));
         item.put("email", valueOrDefault(user.getEmail(), ""));
         item.put("qqEmail", valueOrDefault(user.getQqEmail(), ""));
         item.put("companyName", valueOrDefault(user.getCompanyName(), ""));
@@ -238,5 +236,12 @@ public class AdminController {
         String clean = value.trim();
         if (clean.length() <= maxLength) return clean;
         return clean.substring(0, maxLength) + "...";
+    }
+
+    private String displayOwner(Object userId, Object username) {
+        String id = userId == null ? "" : userId.toString();
+        String name = username == null ? "" : username.toString();
+        if (id.isBlank()) return valueOrDefault(name, "未归属");
+        return valueOrDefault(name, "用户 " + id);
     }
 }
