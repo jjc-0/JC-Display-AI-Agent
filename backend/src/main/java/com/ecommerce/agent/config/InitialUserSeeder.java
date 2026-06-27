@@ -24,11 +24,11 @@ public class InitialUserSeeder implements CommandLineRunner {
     }
 
     private void upsertUser(String username, String rawPassword, String role) {
-        User user = userRepository.findByUsername(username)
-                .orElseGet(() -> new User(username, "", role));
+        if (userRepository.findByUsername(username).isPresent()) {
+            return;
+        }
 
-        user.setPassword(passwordEncoder.encode(rawPassword));
-        user.setRole(role);
+        User user = new User(username, passwordEncoder.encode(rawPassword), role);
         userRepository.save(user);
     }
 }

@@ -1,11 +1,15 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react"
-import { Mail, Save, Upload, UserRound } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Camera, CheckCircle2, KeyRound, Mail, Moon, Save, SunMedium, Upload } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
+import { getApiError, isQqEmail } from "@/features/auth/authUtils"
+import { useCountdown } from "@/features/auth/useCountdown"
+import { useThemeMode } from "@/hooks/useThemeMode"
 import api from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 interface ProfileForm {
   id?: number
@@ -36,24 +40,22 @@ const emptyProfile: ProfileForm = {
 }
 
 export default function Profile() {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const qqCountdown = useCountdown()
+  const { isDark, toggleTheme } = useThemeMode()
   const [profile, setProfile] = useState<ProfileForm>(emptyProfile)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const [message, setMessage] = useState("")
   const [usernameStatus, setUsernameStatus] = useState("")
-  const [avatarUploading, setAvatarUploading] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
   const [qqForm, setQqForm] = useState({ qqEmail: "", code: "" })
   const [qqSending, setQqSending] = useState(false)
   const [qqBinding, setQqBinding] = useState(false)
   const [qqMessage, setQqMessage] = useState("")
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  })
-  const [passwordMessage, setPasswordMessage] = useState("")
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" })
   const [passwordSaving, setPasswordSaving] = useState(false)
+  const [passwordMessage, setPasswordMessage] = useState("")
 
   useEffect(() => {
     loadProfile()
@@ -68,10 +70,10 @@ export default function Profile() {
       try {
         const { data } = await api.get("/auth/username/check", { params: { username: profile.username } })
         setUsernameStatus(data.available ? "用户名可用" : "用户名已被使用")
-      } catch (e: any) {
-        setUsernameStatus(e.response?.data?.message || "")
+      } catch (error) {
+        setUsernameStatus(getApiError(error, ""))
       }
-    }, 450)
+    }, 420)
     return () => window.clearTimeout(timer)
   }, [profile.username])
 
@@ -79,11 +81,12 @@ export default function Profile() {
     setLoading(true)
     try {
       const { data } = await api.get("/auth/me")
-      setProfile({ ...emptyProfile, ...data })
-      setQqForm((prev) => ({ ...prev, qqEmail: data.qqEmail || "" }))
-      syncProfileStorage(data)
-    } catch {
-      setMessage("资料读取失败，请重新登录后再试。")
+      const next = { ...emptyProfile, ...data }
+      setProfile(next)
+      setQqForm((prev) => ({ ...prev, qqEmail: next.qqEmail || next.email || "" }))
+      syncProfileStorage(next)
+    } catch (error) {
+      setMessage(getApiError(error, "资料读取失败，请重新登录后再试。"))
     } finally {
       setLoading(false)
     }
@@ -105,11 +108,12 @@ export default function Profile() {
     try {
       const { data } = await api.put("/auth/profile", profile)
       if (data.token) localStorage.setItem("jc-auth-token", data.token)
-      setProfile({ ...emptyProfile, ...data })
-      syncProfileStorage(data)
+      const next = { ...emptyProfile, ...data }
+      setProfile(next)
+      syncProfileStorage(next)
       setMessage("资料已保存。")
-    } catch (e: any) {
-      setMessage(e.response?.data?.message || "保存失败，请稍后重试。")
+    } catch (error) {
+      setMessage(getApiError(error, "保存失败，请稍后重试。"))
     } finally {
       setSaving(false)
     }
@@ -123,14 +127,13 @@ export default function Profile() {
     setAvatarUploading(true)
     setMessage("")
     try {
-      const { data } = await api.post("/auth/avatar", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      setProfile({ ...emptyProfile, ...data })
-      syncProfileStorage(data)
+      const { data } = await api.post("/auth/avatar", formData, { headers: { "Content-Type": "multipart/form-data" } })
+      const next = { ...emptyProfile, ...data }
+      setProfile(next)
+      syncProfileStorage(next)
       setMessage("头像已更新。")
-    } catch (e: any) {
-      setMessage(e.response?.data?.message || "头像上传失败。")
+    } catch (error) {
+      setMessage(getApiError(error, "头像上传失败。"))
     } finally {
       setAvatarUploading(false)
       if (fileRef.current) fileRef.current.value = ""
@@ -138,190 +141,221 @@ export default function Profile() {
   }
 
   const sendQqCode = async () => {
-    setQqSending(true)
     setQqMessage("")
+    if (!isQqEmail(qqForm.qqEmail)) {
+      setQqMessage("请输入有效的 QQ 邮箱。")
+      return
+    }
+    setQqSending(true)
     try {
-      const { data } = await api.post("/auth/code/send", {
-        email: qqForm.qqEmail,
-        purpose: "bind_qq",
-      })
+      const { data } = await api.post("/auth/code/send", { email: qqForm.qqEmail.trim(), purpose: "bind_qq" })
       setQqMessage(data.message || "验证码已发送。")
-    } catch (e: any) {
-      setQqMessage(e.response?.data?.message || "验证码发送失败。")
+      qqCountdown.start()
+    } catch (error) {
+      setQqMessage(getApiError(error, "验证码发送失败。"))
     } finally {
       setQqSending(false)
     }
   }
 
   const bindQqEmail = async () => {
-    setQqBinding(true)
     setQqMessage("")
+    if (!isQqEmail(qqForm.qqEmail) || !qqForm.code.trim()) {
+      setQqMessage("请填写 QQ 邮箱和验证码。")
+      return
+    }
+    setQqBinding(true)
     try {
-      const { data } = await api.post("/auth/qq-email/bind", qqForm)
-      setProfile({ ...emptyProfile, ...data })
-      setQqForm((prev) => ({ ...prev, code: "" }))
+      const { data } = await api.post("/auth/qq-email/bind", { qqEmail: qqForm.qqEmail.trim(), code: qqForm.code.trim() })
+      const next = { ...emptyProfile, ...data }
+      setProfile(next)
+      setQqForm({ qqEmail: next.qqEmail || "", code: "" })
       setQqMessage("QQ 邮箱已绑定。")
-    } catch (e: any) {
-      setQqMessage(e.response?.data?.message || "QQ 邮箱绑定失败。")
+    } catch (error) {
+      setQqMessage(getApiError(error, "QQ 邮箱绑定失败。"))
     } finally {
       setQqBinding(false)
     }
   }
 
   const updatePassword = async () => {
-    setPasswordSaving(true)
     setPasswordMessage("")
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordMessage("请完整填写密码信息。")
+      return
+    }
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordMessage("新密码至少需要 8 个字符。")
+      return
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordMessage("两次输入的新密码不一致。")
+      return
+    }
+    setPasswordSaving(true)
     try {
       const { data } = await api.put("/auth/password", passwordForm)
       setPasswordMessage(data?.message || "密码已更新。")
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
-    } catch (e: any) {
-      setPasswordMessage(e.response?.data?.message || "修改密码失败。")
+    } catch (error) {
+      setPasswordMessage(getApiError(error, "修改密码失败。"))
     } finally {
       setPasswordSaving(false)
     }
   }
 
-  const avatarText = String(profile.username || "U").slice(0, 1).toUpperCase()
-  const createdText = profile.createdAt ? `${new Date(profile.createdAt).getFullYear()}年${new Date(profile.createdAt).getMonth() + 1}月` : "—"
+  const avatarText = String(profile.displayName || profile.username || "U").slice(0, 1).toUpperCase()
+  const createdText = profile.createdAt
+    ? new Date(profile.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })
+    : "暂无记录"
 
   return (
-    <div className="mx-auto max-w-[1420px] space-y-6 animate-fade-in">
-      <section className="rounded-[18px] border border-[#E4E8E5] bg-white p-6 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.22)]">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
-          <AvatarPreview avatarUrl={profile.avatarUrl} avatarText={avatarText} size="large" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="truncate text-3xl font-black tracking-tight text-[#171916]">
-                {profile.displayName || profile.username || "个人信息"}
-              </h1>
-              <Badge variant="secondary" className="text-[11px]">
-                {profile.role === "admin" ? "管理员" : "用户"}
-              </Badge>
-              <Badge variant="success" className="text-[11px]">启用</Badge>
-            </div>
-            <p className="mt-4 text-sm font-medium text-[#171916]">{profile.username || "—"}</p>
-            <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-              <InfoStat label="账号 ID" value={profile.id ? String(profile.id) : "—"} />
-              <InfoStat label="账号类型" value={profile.role === "admin" ? "管理员" : "普通用户"} />
-              <InfoStat label="注册时间" value={createdText} />
+    <div className="mx-auto grid max-w-[1420px] grid-cols-1 gap-4 animate-fade-in xl:grid-cols-[360px_minmax(0,1fr)]">
+      <aside className="space-y-4">
+        <section className="rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 shadow-[var(--ui-shadow-panel)]">
+          <div className="flex flex-col items-center text-center">
+            <AvatarPreview avatarUrl={profile.avatarUrl} avatarText={avatarText} size="large" />
+            <h1 className="mt-5 max-w-full truncate text-2xl font-black tracking-tight text-[var(--ui-text)]">
+              {profile.displayName || profile.username || "个人信息"}
+            </h1>
+            <p className="mt-2 text-sm font-semibold text-[var(--ui-text-muted)]">{profile.username || "未登录"}</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Badge variant={profile.role === "admin" ? "warning" : "secondary"}>{profile.role === "admin" ? "管理员" : "普通用户"}</Badge>
+              <Badge variant="success">已启用</Badge>
             </div>
           </div>
-        </div>
-      </section>
 
-      <section className="rounded-[18px] border border-[#E4E8E5] bg-white p-6">
-        <h2 className="text-xl font-black text-[#171916]">资料与头像</h2>
-        <p className="mt-2 text-sm text-[#74766F]">维护账号基础资料，用户名保存前会自动检查是否重复。</p>
-        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <Card>
-            <CardContent className="space-y-5 p-6">
-              <AvatarPreview avatarUrl={profile.avatarUrl} avatarText={avatarText} />
-              <div>
-                <h3 className="text-base font-black text-[#171916]">资料头像</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[#343A35]">
-                  支持 PNG、JPG、WEBP、GIF，大小不超过 2MB。上传后会同步到右上角账户面板。
-                </p>
-              </div>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={uploadAvatar} />
-              <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={avatarUploading}>
-                <Upload size={14} />
-                {avatarUploading ? "上传中" : "上传头像"}
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="mt-6 grid grid-cols-1 gap-3">
+            <InfoStat label="账号 ID" value={profile.id ? String(profile.id) : "暂无"} />
+            <InfoStat label="注册时间" value={createdText} />
+            <InfoStat label="QQ 邮箱" value={profile.qqEmail || "未绑定"} />
+          </div>
+        </section>
 
-          <Card>
-            <CardContent className="space-y-5 p-6">
-              <h3 className="text-base font-black text-[#171916]">编辑个人资料</h3>
-              <div className="space-y-2">
-                <Label>用户名</Label>
-                <Input value={profile.username} onChange={(e) => updateField("username", e.target.value)} placeholder="输入用户名" />
-                {usernameStatus && (
-                  <p className={`text-xs font-semibold ${usernameStatus.includes("可用") ? "text-[#1F5F53]" : "text-red-600"}`}>
-                    {usernameStatus}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>显示名称</Label>
-                <Input value={profile.displayName} onChange={(e) => updateField("displayName", e.target.value)} placeholder="输入显示名称" />
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>邮箱</Label>
-                  <Input value={profile.email} onChange={(e) => updateField("email", e.target.value)} />
+        <section className="rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 text-[var(--ui-text)] shadow-[var(--ui-shadow-panel)]">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] border border-[var(--ui-border-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-strong)]">
+              {isDark ? <SunMedium size={18} /> : <Moon size={18} />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-black text-[var(--ui-text)]">主题切换</h2>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--ui-text-muted)]">
+                白色主题保持纯净浅色，黑色主题以黑色为主、绿色作为辅助状态色。
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="mt-4 flex h-12 w-full items-center justify-between rounded-[8px] bg-[var(--ui-button-primary-bg)] px-4 text-sm font-black text-[var(--ui-button-primary-fg)] transition-colors hover:bg-[var(--ui-button-primary-hover)] active:translate-y-px"
+          >
+            <span>{isDark ? "切换浅色主题" : "启用黑色主题"}</span>
+            {isDark ? <SunMedium size={17} /> : <Moon size={17} />}
+          </button>
+        </section>
+
+        <section className="rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5">
+          <div className="flex items-center gap-3">
+            <div className="profile-icon-cell"><Camera size={18} /></div>
+            <div>
+              <h2 className="text-base font-black text-[var(--ui-text)]">头像</h2>
+              <p className="text-xs font-medium text-[var(--ui-text-muted)]">支持 PNG、JPG、WEBP、GIF，最大 2MB。</p>
+            </div>
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={uploadAvatar} />
+          <Button variant="outline" className="mt-4 w-full rounded-[8px]" onClick={() => fileRef.current?.click()} disabled={avatarUploading}>
+            <Upload size={14} />
+            {avatarUploading ? "上传中" : "上传头像"}
+          </Button>
+        </section>
+      </aside>
+
+      <main className="space-y-4">
+        <section className="rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 shadow-[var(--ui-shadow-panel)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.08em] text-[var(--ui-text-muted)]">Profile</p>
+              <h2 className="mt-1 text-xl font-black text-[var(--ui-text)]">资料与用户名</h2>
+              <p className="mt-1 text-sm text-[var(--ui-text-muted)]">用户名保存后会刷新登录 Token，显示名称会同步到右上角账号面板。</p>
+            </div>
+            <Button onClick={saveProfile} disabled={saving || loading || usernameStatus === "用户名已被使用"} className="rounded-[8px]">
+              <Save size={14} />
+              {saving ? "保存中" : "保存资料"}
+            </Button>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <FormField label="用户名">
+              <Input value={profile.username} onChange={(event) => updateField("username", event.target.value)} className="auth-input" placeholder="输入用户名" />
+              {usernameStatus && <p className={cn("mt-2 text-xs font-black", usernameStatus === "用户名可用" ? "text-[#1F5F53]" : "text-destructive")}>{usernameStatus}</p>}
+            </FormField>
+            <FormField label="显示名称">
+              <Input value={profile.displayName} onChange={(event) => updateField("displayName", event.target.value)} className="auth-input" placeholder="输入显示名称" />
+            </FormField>
+            <FormField label="联系邮箱">
+              <Input value={profile.email} onChange={(event) => updateField("email", event.target.value)} className="auth-input" placeholder="业务联系邮箱" />
+            </FormField>
+            <FormField label="手机号">
+              <Input value={profile.phone} onChange={(event) => updateField("phone", event.target.value)} className="auth-input" placeholder="手机号" />
+            </FormField>
+            <FormField label="公司">
+              <Input value={profile.companyName} onChange={(event) => updateField("companyName", event.target.value)} className="auth-input" placeholder="公司名称" />
+            </FormField>
+            <FormField label="部门">
+              <Input value={profile.department} onChange={(event) => updateField("department", event.target.value)} className="auth-input" placeholder="部门" />
+            </FormField>
+            <FormField label="职位">
+              <Input value={profile.jobTitle} onChange={(event) => updateField("jobTitle", event.target.value)} className="auth-input" placeholder="职位" />
+            </FormField>
+          </div>
+          {message && <p className={cn("mt-4 text-sm font-black", message.includes("已") ? "text-[#1F5F53]" : "text-destructive")}>{message}</p>}
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="overflow-hidden">
+            <CardContent className="p-5">
+              <PanelTitle icon={<Mail size={18} />} title="QQ 邮箱绑定" text="用于验证码登录、注册校验和找回密码。" />
+              <div className="mt-5 space-y-3">
+                <BindingStatus active={Boolean(profile.qqEmail)} text={profile.qqEmail || "尚未绑定 QQ 邮箱"} />
+                <Input value={qqForm.qqEmail} onChange={(event) => setQqForm((prev) => ({ ...prev, qqEmail: event.target.value }))} placeholder="example@qq.com" className="auth-input" />
+                <div className="grid grid-cols-[minmax(0,1fr)_128px] gap-2">
+                  <Input value={qqForm.code} onChange={(event) => setQqForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="验证码" className="auth-input" maxLength={6} />
+                  <Button variant="outline" className="h-12 rounded-[8px]" onClick={sendQqCode} disabled={qqSending || qqCountdown.running}>
+                    {qqCountdown.running ? `${qqCountdown.seconds}s` : qqSending ? "发送中" : "发送验证码"}
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label>手机</Label>
-                  <Input value={profile.phone} onChange={(e) => updateField("phone", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>公司</Label>
-                  <Input value={profile.companyName} onChange={(e) => updateField("companyName", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>职位</Label>
-                  <Input value={profile.jobTitle} onChange={(e) => updateField("jobTitle", e.target.value)} />
-                </div>
-              </div>
-              {message && <p className="text-xs font-semibold text-[#1F5F53]">{message}</p>}
-              <div className="flex justify-end">
-                <Button onClick={saveProfile} disabled={saving || loading || usernameStatus.includes("已被使用")}>
-                  <Save size={14} />
-                  {saving ? "更新中" : "更新资料"}
+                {qqMessage && <p className={cn("text-xs font-black", qqMessage.includes("已") ? "text-[#1F5F53]" : "text-destructive")}>{qqMessage}</p>}
+                <Button className="w-full rounded-[8px]" onClick={bindQqEmail} disabled={qqBinding}>
+                  {qqBinding ? "绑定中" : "绑定 QQ 邮箱"}
                 </Button>
               </div>
             </CardContent>
           </Card>
-        </div>
-      </section>
 
-      <section className="rounded-[18px] border border-[#E4E8E5] bg-white p-6">
-        <h2 className="text-base font-black text-[#171916]">QQ 邮箱绑定</h2>
-        <p className="mt-2 text-sm text-[#74766F]">绑定后可用于验证码登录和忘记密码恢复。</p>
-        <div className="mt-6 space-y-4">
-          <BindingItem icon={<Mail size={20} />} name="QQ 邮箱" status={profile.qqEmail ? "已绑定" : "未绑定"} value={profile.qqEmail || "请输入 QQ 邮箱并完成验证码绑定"} active={Boolean(profile.qqEmail)} />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_160px_160px]">
-            <Input value={qqForm.qqEmail} onChange={(e) => setQqForm((prev) => ({ ...prev, qqEmail: e.target.value }))} placeholder="例如：123456@qq.com" />
-            <Button variant="outline" onClick={sendQqCode} disabled={qqSending || !qqForm.qqEmail.trim()}>
-              {qqSending ? "发送中" : "发送验证码"}
-            </Button>
-            <Input value={qqForm.code} onChange={(e) => setQqForm((prev) => ({ ...prev, code: e.target.value }))} placeholder="6 位验证码" />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-[#1F5F53]">{qqMessage}</p>
-            <Button onClick={bindQqEmail} disabled={qqBinding || !qqForm.qqEmail.trim() || !qqForm.code.trim()}>
-              {qqBinding ? "绑定中" : "绑定 QQ 邮箱"}
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-[18px] border border-[#E4E8E5] bg-white">
-        <div className="border-b border-[#E4E8E5] p-6">
-          <h2 className="text-xl font-medium text-[#171916]">修改密码</h2>
-        </div>
-        <div className="space-y-6 p-6">
-          <PasswordField label="当前密码" value={passwordForm.currentPassword} onChange={(value) => setPasswordForm((prev) => ({ ...prev, currentPassword: value }))} />
-          <PasswordField label="新密码" value={passwordForm.newPassword} onChange={(value) => setPasswordForm((prev) => ({ ...prev, newPassword: value }))} helper="密码至少需要 8 个字符" />
-          <PasswordField label="确认新密码" value={passwordForm.confirmPassword} onChange={(value) => setPasswordForm((prev) => ({ ...prev, confirmPassword: value }))} />
-          {passwordMessage && <p className="text-xs font-semibold text-[#1F5F53]">{passwordMessage}</p>}
-          <div className="flex justify-end">
-            <Button onClick={updatePassword} disabled={passwordSaving}>
-              {passwordSaving ? "修改中" : "修改密码"}
-            </Button>
-          </div>
-        </div>
-      </section>
+          <Card className="overflow-hidden">
+            <CardContent className="p-5">
+              <PanelTitle icon={<KeyRound size={18} />} title="修改密码" text="修改成功后请使用新密码登录，验证码登录不受影响。" />
+              <div className="mt-5 space-y-3">
+                <Input type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))} placeholder="当前密码" className="auth-input" />
+                <Input type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))} placeholder="新密码，至少 8 位" className="auth-input" />
+                <Input type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))} placeholder="确认新密码" className="auth-input" />
+                {passwordMessage && <p className={cn("text-xs font-black", passwordMessage.includes("已") ? "text-[#1F5F53]" : "text-destructive")}>{passwordMessage}</p>}
+                <Button className="w-full rounded-[8px]" onClick={updatePassword} disabled={passwordSaving}>
+                  {passwordSaving ? "修改中" : "修改密码"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </main>
     </div>
   )
 }
 
 function AvatarPreview({ avatarUrl, avatarText, size }: { avatarUrl: string; avatarText: string; size?: "large" }) {
   const className = size === "large"
-    ? "flex h-[118px] w-[118px] items-center justify-center overflow-hidden rounded-[18px] border border-[#E4E8E5] bg-[#F8FBFA] text-3xl font-black"
-    : "flex h-24 w-24 items-center justify-center overflow-hidden rounded-[18px] border border-[#E4E8E5] bg-[#F8FBFA] text-2xl font-black"
+    ? "flex h-[118px] w-[118px] items-center justify-center overflow-hidden rounded-[22px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] text-3xl font-black text-[var(--ui-text)]"
+    : "flex h-24 w-24 items-center justify-center overflow-hidden rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] text-2xl font-black text-[var(--ui-text)]"
   return (
     <div className={className}>
       {avatarUrl ? <img src={avatarUrl} alt="用户头像" className="h-full w-full object-cover" /> : <span>{avatarText}</span>}
@@ -331,58 +365,40 @@ function AvatarPreview({ avatarUrl, avatarText, size }: { avatarUrl: string; ava
 
 function InfoStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[12px] border border-[#E4E8E5] bg-white p-5">
-      <p className="text-sm font-medium text-[#171916]">{label}</p>
-      <p className="mt-3 text-2xl font-black text-[#171916]">{value}</p>
+    <div className="rounded-[12px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] p-3">
+      <p className="text-[11px] font-black text-[var(--ui-text-muted)]">{label}</p>
+      <p className="mt-2 truncate text-sm font-black text-[var(--ui-text)]">{value}</p>
     </div>
   )
 }
 
-function BindingItem({
-  icon,
-  name,
-  status,
-  value,
-  active,
-}: {
-  icon: React.ReactNode
-  name: string
-  status: string
-  value?: string
-  active?: boolean
-}) {
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-5 rounded-[12px] border border-[#E4E8E5] bg-white p-5">
-      <div className="flex h-16 w-16 items-center justify-center rounded-[12px] border border-[#E4E8E5] bg-white font-black">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-black text-[#171916]">{name}</span>
-          <Badge variant={active ? "success" : "secondary"}>{status}</Badge>
-        </div>
-        {value && <p className="mt-3 text-sm text-[#171916]">{value}</p>}
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function PanelTitle({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="profile-icon-cell">{icon}</div>
+      <div>
+        <h2 className="text-base font-black text-[var(--ui-text)]">{title}</h2>
+        <p className="mt-1 text-sm leading-relaxed text-[var(--ui-text-muted)]">{text}</p>
       </div>
     </div>
   )
 }
 
-function PasswordField({
-  label,
-  value,
-  onChange,
-  helper,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  helper?: string
-}) {
+function BindingStatus({ active, text }: { active: boolean; text: string }) {
   return (
-    <div className="space-y-3">
-      <Label className="text-base font-black text-[#343A35]">{label}</Label>
-      <Input type="password" value={value} onChange={(event) => onChange(event.target.value)} className="h-16 text-base" />
-      {helper && <p className="text-sm text-[#343A35]">{helper}</p>}
+    <div className="flex items-center gap-3 rounded-[10px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] px-3 py-3">
+      <CheckCircle2 size={16} className={active ? "text-[#1F5F53]" : "text-[var(--ui-text-muted)]"} />
+      <span className="min-w-0 flex-1 truncate text-sm font-black text-[var(--ui-text)]">{text}</span>
+      <Badge variant={active ? "success" : "secondary"}>{active ? "已绑定" : "未绑定"}</Badge>
     </div>
   )
 }

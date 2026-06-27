@@ -7,13 +7,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-[#171916] text-primary-foreground shadow-none hover:bg-[#2A2D28]",
+        default: "bg-[var(--ui-button-primary-bg)] text-[var(--ui-button-primary-fg)] shadow-none hover:bg-[var(--ui-button-primary-hover)]",
         destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
-        outline: "border border-[#E4E8E5] bg-[#FFFFFF] text-[#343A35] hover:bg-[#F4F6F5] hover:text-[#171916]",
-        secondary: "border border-[#D7E8E0] bg-[#EEF7F3] text-[#1F5F53] hover:bg-[#E3F0EA]",
-        ghost: "hover:bg-[#F4F6F5] hover:text-[#171916] text-[#74766F]",
-        link: "text-[#1F5F53] underline-offset-4 hover:underline",
-        gradient: "bg-[#171916] text-white shadow-none hover:bg-[#2A2D28]",
+        outline: "border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-soft)] hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]",
+        secondary: "border border-[var(--ui-border-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-strong)] hover:bg-[var(--ui-accent)]",
+        ghost: "text-[var(--ui-text-muted)] hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]",
+        link: "text-[var(--ui-accent-strong)] underline-offset-4 hover:underline",
+        gradient: "bg-[var(--ui-button-primary-bg)] text-[var(--ui-button-primary-fg)] shadow-none hover:bg-[var(--ui-button-primary-hover)]",
       },
       size: {
         default: "h-10 px-4 py-2",

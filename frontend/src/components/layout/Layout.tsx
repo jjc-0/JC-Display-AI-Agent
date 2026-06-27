@@ -2,11 +2,15 @@ import { useCallback, useEffect, useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
   Check,
+  ChevronsLeft,
+  ChevronsRight,
   Loader2,
   LogOut,
   MessageSquare,
+  Moon,
   Plus,
   Repeat2,
+  SunMedium,
   UserRound,
   X,
 } from "lucide-react"
@@ -15,6 +19,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { navigation } from "@/config/navigation"
+import { AUTH_SPLASH_SEEN_KEY } from "@/features/auth/AuthShell"
+import { useThemeMode } from "@/hooks/useThemeMode"
 import api from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -36,21 +42,24 @@ interface UserProfile {
 }
 
 const SIDEBAR_W = 224
+const SIDEBAR_COLLAPSED_W = 76
 const MAX_SESSIONS = 10
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-all duration-200",
+    "flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
     isActive
-      ? "bg-[#EEF7F3] text-[#1F5F53] ring-1 ring-[#D7E8E0]"
-      : "text-[#74766F] hover:bg-[#F6F8F7] hover:text-[#171916]"
+      ? "bg-[var(--ui-accent)] text-[var(--ui-accent-strong)] ring-1 ring-[var(--ui-border-accent)]"
+      : "text-[var(--ui-text-muted)] hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]"
   )
 
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { isDark, toggleTheme } = useThemeMode()
   const [authAccount, setAuthAccount] = useState(() => localStorage.getItem("jc-display-login-account") || "")
   const [authRole, setAuthRole] = useState(() => localStorage.getItem("jc-display-login-role") || "")
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("jc-sidebar-collapsed") === "1")
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [sessions, setSessions] = useState<SessionItem[]>([])
@@ -109,6 +118,10 @@ export default function Layout() {
     return () => window.removeEventListener("click", close)
   }, [])
 
+  useEffect(() => {
+    localStorage.setItem("jc-sidebar-collapsed", sidebarCollapsed ? "1" : "0")
+  }, [sidebarCollapsed])
+
   const currentSessionId = new URLSearchParams(location.search).get("session")
   const flatNav = navigation.flatMap((group) => group.items)
   const currentItem = flatNav.find((item) => location.pathname.startsWith(item.href))
@@ -122,10 +135,10 @@ export default function Layout() {
     const diff = Date.now() - new Date(value).getTime()
     const mins = Math.floor(diff / 60000)
     if (mins < 1) return "刚刚"
-    if (mins < 60) return `${mins}分钟前`
+    if (mins < 60) return `${mins} 分钟前`
     const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}小时前`
-    return `${Math.floor(hours / 24)}天前`
+    if (hours < 24) return `${hours} 小时前`
+    return `${Math.floor(hours / 24)} 天前`
   }
 
   const saveTitle = async (sessionId: string) => {
@@ -134,8 +147,6 @@ export default function Layout() {
     try {
       await api.put(`/agent/session/${sessionId}/title`, { title: nextTitle })
       setSessions((prev) => prev.map((item) => item.sessionId === sessionId ? { ...item, title: nextTitle } : item))
-    } catch {
-      // 保留当前标题，避免接口失败时误导用户。
     } finally {
       setEditingId(null)
     }
@@ -145,6 +156,7 @@ export default function Layout() {
     localStorage.removeItem("jc-auth-token")
     localStorage.removeItem("jc-display-login-role")
     localStorage.removeItem("jc-display-login-account")
+    sessionStorage.removeItem(AUTH_SPLASH_SEEN_KEY)
     setAuthAccount("")
     setAuthRole("")
     navigate("/login", { replace: true })
@@ -152,15 +164,15 @@ export default function Layout() {
 
   const renderNavGroup = (group: (typeof navigation)[number]) => (
     <div key={group.title} className="mb-1">
-      <div className="px-3 py-3 pb-2 text-[10px] text-[#6F716B] tracking-[0.08em] font-black uppercase">
+      <div className={cn("px-3 pb-2 pt-3 text-[10px] font-black uppercase tracking-[0.08em] text-[var(--ui-text-muted)]", sidebarCollapsed && "sr-only")}>
         {group.title}
       </div>
       <div className="space-y-0.5">
         {group.items.map((item) => (
-          <NavLink key={item.href} to={item.href} className={navLinkClass}>
+          <NavLink key={item.href} to={item.href} className={navLinkClass} title={sidebarCollapsed ? item.label : undefined}>
             <span className="flex-shrink-0">{item.icon}</span>
-            <span className="flex-1 truncate">{item.label}</span>
-            {item.badge && (
+            <span className={cn("flex-1 truncate", sidebarCollapsed && "hidden")}>{item.label}</span>
+            {item.badge && !sidebarCollapsed && (
               <Badge variant={item.badgeVariant || "default"} className="h-5 px-1.5 py-0 text-[10px]">
                 {item.badge}
               </Badge>
@@ -172,46 +184,41 @@ export default function Layout() {
   )
 
   return (
-    <div className="workspace-shell">
-      <aside className="workspace-sidebar" style={{ width: SIDEBAR_W }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "18px 14px 20px" }}>
+    <div className={cn("workspace-shell", sidebarCollapsed && "workspace-shell--sidebar-collapsed")}>
+      <aside className="workspace-sidebar" style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_W : SIDEBAR_W }}>
+        <div className={cn("flex items-center gap-3 px-3 pb-5 pt-4", sidebarCollapsed && "justify-center px-2")}>
           <CompanyLogoMark className="h-8 w-10 flex-shrink-0" />
-          <div className="leading-tight">
-            <div className="text-[15px] font-black text-[#171916] tracking-tight">JC Display AI</div>
-            <div className="text-[10px] text-[#7B7D76] font-semibold">Export Console</div>
+          <div className={cn("leading-tight", sidebarCollapsed && "hidden")}>
+            <div className="text-[15px] font-black tracking-tight text-[var(--ui-text)]">JC Display AI</div>
+            <div className="text-[10px] font-semibold text-[var(--ui-text-muted)]">Export Console</div>
           </div>
         </div>
 
-        <nav
-          style={{
-            flex: "1 1 0",
-            minHeight: 0,
-            overflowY: "auto",
-            paddingLeft: 12,
-            paddingRight: 12,
-          }}
-        >
+        <nav className={cn("min-h-0 flex-1 overflow-y-auto", sidebarCollapsed ? "px-2" : "px-3")}>
           {navigation.filter((group) => group.title === "API").map(renderNavGroup)}
 
           <div className="mb-1">
-            <div className="flex items-center justify-between px-3 py-3 pb-2">
-              <span className="text-[10px] text-[#6F716B] tracking-[0.08em] font-black uppercase">
+            <div className={cn("flex items-center justify-between px-3 pb-2 pt-3", sidebarCollapsed && "justify-center px-2")}>
+              <span className={cn("text-[10px] font-black uppercase tracking-[0.08em] text-[var(--ui-text-muted)]", sidebarCollapsed && "sr-only")}>
                 历史对话
               </span>
-              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => navigate("/agent-chat")} title="新对话">
-                <Plus size={13} className="text-muted-foreground" />
-              </Button>
+              {!sidebarCollapsed && (
+                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => navigate("/agent-chat")} title="新对话">
+                  <Plus size={13} />
+                </Button>
+              )}
             </div>
+
             <div className="space-y-0.5">
               {loadingSessions ? (
                 <div className="flex justify-center py-4">
-                  <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                  <Loader2 size={14} className="animate-spin text-[var(--ui-text-muted)]" />
                 </div>
               ) : sessions.length === 0 ? (
-                <p className="py-4 text-center text-[11px] text-muted-foreground/50">暂无历史</p>
+                !sidebarCollapsed && <p className="py-4 text-center text-[11px] text-[var(--ui-text-muted)]/60">暂无历史</p>
               ) : sessions.map((session) => (
                 <div key={session.sessionId} className="group relative">
-                  {editingId === session.sessionId ? (
+                  {editingId === session.sessionId && !sidebarCollapsed ? (
                     <div className="flex items-center gap-1 px-2 py-1">
                       <Input
                         autoFocus
@@ -235,20 +242,24 @@ export default function Layout() {
                       type="button"
                       onClick={() => navigate(`/agent-chat?session=${session.sessionId}`)}
                       onDoubleClick={() => {
-                        setEditingId(session.sessionId)
-                        setEditValue(session.title || "")
+                        if (!sidebarCollapsed) {
+                          setEditingId(session.sessionId)
+                          setEditValue(session.title || "")
+                        }
                       }}
                       className={cn(
-                        "w-full cursor-pointer rounded-lg px-3 py-2 text-left transition-colors",
-                        currentSessionId === session.sessionId ? "bg-accent" : "hover:bg-muted"
+                        "w-full cursor-pointer rounded-[10px] px-3 py-2 text-left text-[var(--ui-text-muted)] transition-colors hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]",
+                        sidebarCollapsed && "flex justify-center px-2",
+                        currentSessionId === session.sessionId && "bg-[var(--ui-accent)] text-[var(--ui-accent-strong)]"
                       )}
+                      title={sidebarCollapsed ? session.title || "未命名" : undefined}
                     >
                       <div className="flex items-center gap-2">
-                        <MessageSquare size={12} className="flex-shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate text-[11px] font-medium">{session.title || "未命名"}</span>
+                        <MessageSquare size={12} className="flex-shrink-0" />
+                        <span className={cn("flex-1 truncate text-[11px] font-medium", sidebarCollapsed && "hidden")}>{session.title || "未命名"}</span>
                       </div>
-                      <div className="mt-0.5 flex items-center gap-2 pl-5">
-                        <span className="text-[10px] text-muted-foreground">{timeAgo(session.updatedAt)}</span>
+                      <div className={cn("mt-0.5 pl-5 text-[10px]", sidebarCollapsed && "hidden")}>
+                        {timeAgo(session.updatedAt)}
                       </div>
                     </button>
                   )}
@@ -260,35 +271,51 @@ export default function Layout() {
           {navigation.filter((group) => group.title !== "API").map(renderNavGroup)}
         </nav>
 
-        <div style={{ padding: 12, borderTop: "1px solid #E4E8E5" }}>
-          <NavLink to="/profile" className={navLinkClass}>
+        <div className="border-t border-[var(--ui-border)] p-3">
+          <NavLink to="/profile" className={navLinkClass} title={sidebarCollapsed ? "个人信息" : undefined}>
             <UserRound size={17} />
-            <span className="flex-1 truncate">个人信息</span>
+            <span className={cn("flex-1 truncate", sidebarCollapsed && "hidden")}>个人信息</span>
           </NavLink>
-          <div className="flex items-center gap-2 px-2 py-2 text-[11px] font-semibold text-[#74766F]">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className={cn(
+              "mt-1 flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-[13px] font-semibold text-[var(--ui-text-muted)] transition-all duration-200 hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]",
+              isDark && "bg-[var(--ui-accent)] text-[var(--ui-accent-strong)] ring-1 ring-[var(--ui-border-accent)]",
+              sidebarCollapsed && "justify-center px-2"
+            )}
+            title={isDark ? "切换浅色主题" : "切换黑色主题"}
+          >
+            {isDark ? <SunMedium size={17} /> : <Moon size={17} />}
+            <span className={cn("flex-1 truncate text-left", sidebarCollapsed && "hidden")}>{isDark ? "浅色主题" : "黑色主题"}</span>
+          </button>
+          <div className={cn("flex items-center gap-2 px-2 py-2 text-[11px] font-semibold text-[var(--ui-text-muted)]", sidebarCollapsed && "justify-center")}>
             <span className="workspace-status-dot" />
-            系统在线
+            <span className={cn(sidebarCollapsed && "hidden")}>系统在线</span>
           </div>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            className={cn(
+              "mt-1 flex w-full items-center gap-3 rounded-[10px] border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2.5 text-[13px] font-black text-[var(--ui-text)] transition-all duration-200 hover:bg-[var(--ui-muted)] active:translate-y-px",
+              sidebarCollapsed && "justify-center px-2"
+            )}
+            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+          >
+            {sidebarCollapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}
+            <span className={cn("flex-1 truncate text-left", sidebarCollapsed && "hidden")}>{sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}</span>
+          </button>
         </div>
       </aside>
 
-      <main
-        style={{
-          flex: "1 1 0",
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          height: "100vh",
-          overflow: "hidden",
-        }}
-      >
+      <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <div className="workspace-top-strip">
           <div className="flex min-w-0 flex-col justify-center">
-            <span className="text-[10px] font-bold text-[#74766F]">用户控制台</span>
-            <span className="truncate text-sm font-black text-[#171916]">{currentTitle}</span>
+            <span className="text-[10px] font-bold text-[var(--ui-text-muted)]">用户控制台</span>
+            <span className="truncate text-sm font-black text-[var(--ui-text)]">{currentTitle}</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2 rounded-full border border-[#E4E8E5] bg-white px-4 py-3 text-sm font-black text-[#171916] lg:flex">
+            <div className="hidden items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-sm font-black text-[var(--ui-text)] lg:flex">
               <span className="workspace-status-dot" />
               网关在线
             </div>
@@ -299,20 +326,18 @@ export default function Layout() {
                   event.stopPropagation()
                   setUserMenuOpen((open) => !open)
                 }}
-                className="flex min-h-12 items-center gap-3 rounded-full border border-[#D7E8E0] bg-white py-1.5 pl-1.5 pr-4 text-left transition-colors hover:bg-[#F6F8F7]"
+                className="flex min-h-12 items-center gap-3 rounded-full border border-[var(--ui-border-accent)] bg-[var(--ui-surface)] py-1.5 pl-1.5 pr-4 text-left transition-colors hover:bg-[var(--ui-muted)]"
               >
                 <CompanyLogoMark className="h-9 w-11" decorative />
                 <div className="hidden leading-tight sm:block">
-                  <div className="max-w-[160px] truncate text-sm font-black text-[#171916]">
-                    {authAccount || "未登录"}
-                  </div>
-                  <div className="text-[10px] font-semibold text-[#171916]">{authRole === "admin" ? "Admin" : "User"}</div>
+                  <div className="max-w-[160px] truncate text-sm font-black text-[var(--ui-text)]">{authAccount || "未登录"}</div>
+                  <div className="text-[10px] font-semibold text-[var(--ui-text-muted)]">{authRole === "admin" ? "Admin" : "User"}</div>
                 </div>
               </button>
 
               {userMenuOpen && (
-                <div className="workspace-user-menu right-0 top-[58px] w-[330px] rounded-[26px] border border-[#E4E8E5] bg-white p-4 shadow-[0_26px_80px_-54px_rgba(15,23,42,0.34)]">
-                  <div className="rounded-[16px] border border-[#E4E8E5] bg-[#F8FBFA] p-3">
+                <div className="workspace-user-menu right-0 top-[58px] w-[330px] rounded-[18px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4 shadow-[var(--ui-shadow-panel)]">
+                  <div className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] p-3">
                     <div className="flex items-center gap-3">
                       {profile?.avatarUrl ? (
                         <img src={profile.avatarUrl} alt="" className="h-12 w-12 rounded-[14px] object-cover" />
@@ -320,28 +345,16 @@ export default function Layout() {
                         <CompanyLogoMark className="h-12 w-14" decorative />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-black text-[#171916]">
-                          {profile?.email || profile?.username || authAccount || "未登录"}
-                        </div>
-                        <div className="truncate text-xs font-medium text-[#74766F]">
-                          {profile?.username || authAccount || "未登录"}
-                        </div>
+                        <div className="truncate text-sm font-black text-[var(--ui-text)]">{profile?.email || profile?.username || authAccount || "未登录"}</div>
+                        <div className="truncate text-xs font-medium text-[var(--ui-text-muted)]">{profile?.username || authAccount || "未登录"}</div>
                       </div>
-                      <Badge variant="success" className="text-[10px]">
-                        {authRole === "admin" ? "Admin" : "User"}
-                      </Badge>
+                      <Badge variant="success" className="text-[10px]">{authRole === "admin" ? "Admin" : "User"}</Badge>
                     </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <div className="rounded-[14px] border border-[#E4E8E5] bg-white p-3">
-                      <div className="text-[11px] font-bold text-[#74766F]">账户角色</div>
-                      <div className="mt-2 text-sm font-black text-[#171916]">{authRole === "admin" ? "管理员" : "普通用户"}</div>
-                    </div>
-                    <div className="rounded-[14px] border border-[#E4E8E5] bg-white p-3">
-                      <div className="text-[11px] font-bold text-[#74766F]">注册时间</div>
-                      <div className="mt-2 text-sm font-black text-[#171916]">{profileCreated}</div>
-                    </div>
+                    <MenuMetric label="账号角色" value={authRole === "admin" ? "管理员" : "普通用户"} />
+                    <MenuMetric label="注册时间" value={profileCreated} />
                   </div>
 
                   <button
@@ -350,34 +363,34 @@ export default function Layout() {
                       setUserMenuOpen(false)
                       navigate("/profile")
                     }}
-                    className="mt-4 flex w-full items-center gap-3 rounded-[8px] bg-white px-4 py-3 text-left shadow-[0_18px_42px_-34px_rgba(15,23,42,0.28)] transition-colors hover:bg-[#F8FBFA]"
+                    className="mt-4 flex w-full items-center gap-3 rounded-[8px] bg-[var(--ui-surface)] px-4 py-3 text-left shadow-[var(--ui-shadow-card)] transition-colors hover:bg-[var(--ui-muted)]"
                   >
-                    <UserRound size={18} className="text-[#171916]" />
+                    <UserRound size={18} className="text-[var(--ui-text)]" />
                     <div>
-                      <div className="text-sm font-black text-[#171916]">个人资料</div>
-                      <div className="text-xs text-[#74766F]">账户与安全设置</div>
+                      <div className="text-sm font-black text-[var(--ui-text)]">个人资料</div>
+                      <div className="text-xs text-[var(--ui-text-muted)]">账号与安全设置</div>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={logout}
-                    className="mt-3 flex w-full items-center gap-3 rounded-[8px] bg-white px-4 py-3 text-left shadow-[0_18px_42px_-34px_rgba(15,23,42,0.28)] transition-colors hover:bg-red-50"
+                    className="mt-3 flex w-full items-center gap-3 rounded-[8px] bg-[var(--ui-surface)] px-4 py-3 text-left shadow-[var(--ui-shadow-card)] transition-colors hover:bg-red-50"
                   >
                     <LogOut size={18} className="text-red-600" />
                     <div>
                       <div className="text-sm font-black text-red-600">退出登录</div>
-                      <div className="text-xs text-[#74766F]">结束当前会话</div>
+                      <div className="text-xs text-[var(--ui-text-muted)]">结束当前会话</div>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={logout}
-                    className="mt-2 flex w-full items-center gap-2 px-1 py-1 text-xs font-bold text-[#74766F] hover:text-[#171916]"
+                    className="mt-2 flex w-full items-center gap-2 px-1 py-1 text-xs font-bold text-[var(--ui-text-muted)] hover:text-[var(--ui-text)]"
                   >
                     <Repeat2 size={14} />
-                    切换账户
+                    切换账号
                   </button>
                 </div>
               )}
@@ -385,18 +398,19 @@ export default function Layout() {
           </div>
         </div>
 
-        <div
-          style={{
-            flex: "1 1 0",
-            minHeight: 0,
-            overflowY: "auto",
-            padding: "16px 16px 16px 20px",
-          }}
-          className="workspace-content"
-        >
+        <div className="workspace-content min-h-0 flex-1 overflow-y-auto px-4 py-4 pl-5">
           <Outlet />
         </div>
       </main>
+    </div>
+  )
+}
+
+function MenuMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[14px] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+      <div className="text-[11px] font-bold text-[var(--ui-text-muted)]">{label}</div>
+      <div className="mt-2 text-sm font-black text-[var(--ui-text)]">{value}</div>
     </div>
   )
 }

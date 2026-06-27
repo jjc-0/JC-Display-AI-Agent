@@ -1,7 +1,10 @@
 package com.ecommerce.agent.controller;
 
 import com.ecommerce.agent.config.JwtUtil;
-import com.ecommerce.agent.model.*;
+import com.ecommerce.agent.model.AuthResponse;
+import com.ecommerce.agent.model.LoginRequest;
+import com.ecommerce.agent.model.RegisterRequest;
+import com.ecommerce.agent.model.User;
 import com.ecommerce.agent.repository.UserRepository;
 import com.ecommerce.agent.service.EmailVerificationService;
 import jakarta.validation.Valid;
@@ -14,10 +17,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.LinkedHashMap;
 import java.util.UUID;
 
 @RestController
@@ -41,59 +44,46 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该账号已被注册"));
-        }
+        String username = clean(request.getUsername(), 50);
+        String qqEmail = emailVerificationService.normalizeEmail(request.getQqEmail());
 
-        User user = new User(
-                request.getUsername(),
-                passwordEncoder.encode(request.getPassword()),
-                request.getRole()
-        );
-        userRepository.save(user);
-
-        String token = jwtUtil.generateToken(user.getUsername(), user.getRole());
-        AuthResponse response = new AuthResponse(token, user.getUsername(), user.getRole());
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/username/check")
-    public ResponseEntity<?> checkUsername(@RequestParam String username,
-                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
-        String cleanUsername = clean(username, 50);
-        if (cleanUsername.length() < 3) {
-            return ResponseEntity.badRequest().body(Map.of("available", false, "message", "用户名至少需要 3 个字符"));
-        }
-        Optional<User> current = currentUser(authorization);
-        boolean exists = current
-                .map(user -> userRepository.existsByUsernameAndIdNot(cleanUsername, user.getId()))
-                .orElseGet(() -> userRepository.existsByUsername(cleanUsername));
-        return ResponseEntity.ok(Map.of("available", !exists));
-    }
-
-    @PostMapping("/code/send")
-    public ResponseEntity<?> sendCode(@RequestBody Map<String, Object> body) {
-        String email = emailVerificationService.normalizeEmail(clean(body.get("email"), 120));
-        String purpose = clean(body.get("purpose"), 30);
-        if (!emailVerificationService.isQqEmail(email)) {
+        if (!emailVerificationService.isQqEmail(qqEmail)) {
             return ResponseEntity.badRequest().body(Map.of("message", "请输入有效的 QQ 邮箱"));
         }
-        if (!isAllowedPurpose(purpose)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "验证码用途无效"));
+        if (userRepository.existsByUsername(username)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "该用户名已被注册"));
         }
-        if (EmailVerificationService.PURPOSE_LOGIN.equals(purpose)
-                || EmailVerificationService.PURPOSE_RESET_PASSWORD.equals(purpose)) {
-            boolean exists = userRepository.findByQqEmail(email).isPresent() || userRepository.findByEmail(email).isPresent();
-            if (!exists) {
-                return ResponseEntity.badRequest().body(Map.of("message", "该邮箱尚未绑定账号"));
-            }
+        if (userRepository.findByQqEmail(qqEmail).isPresent() || userRepository.findByEmail(qqEmail).isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "该 QQ 邮箱已绑定其他账号"));
         }
-        try {
-            emailVerificationService.sendCode(email, purpose);
-            return ResponseEntity.ok(Map.of("success", true, "message", "验证码已发送"));
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("message", e.getMessage()));
+        if (!emailVerificationService.verify(qqEmail, EmailVerificationService.PURPOSE_REGISTER, request.getCode())) {
+            return ResponseEntity.status(400).body(Map.of("message", "验证码错误或已过期"));
         }
+
+        User user = new User(username, passwordEncoder.encode(request.getPassword()), request.getRole());
+        user.setQqEmail(qqEmail);
+        user.setEmail(qqEmail);
+        userRepository.save(user);
+
+        return ResponseEntity.ok(authResponse(user));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        String account = clean(request.getAccount(), 120);
+        Optional<User> optUser = userRepository.findByUsername(account);
+        if (optUser.isEmpty()) optUser = userRepository.findByEmail(emailVerificationService.normalizeEmail(account));
+        if (optUser.isEmpty()) optUser = userRepository.findByQqEmail(emailVerificationService.normalizeEmail(account));
+        if (optUser.isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("message", "账号或密码错误"));
+        }
+
+        User user = optUser.get();
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            return ResponseEntity.status(401).body(Map.of("message", "账号或密码错误"));
+        }
+
+        return ResponseEntity.ok(authResponse(user));
     }
 
     @PostMapping("/login/code")
@@ -110,9 +100,38 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("message", "该邮箱尚未绑定账号"));
         }
 
-        User user = optUser.get();
-        String token = jwtUtil.generateToken(user.getUsername(), user.getRole());
-        return ResponseEntity.ok(new AuthResponse(token, user.getUsername(), user.getRole()));
+        return ResponseEntity.ok(authResponse(optUser.get()));
+    }
+
+    @PostMapping("/code/send")
+    public ResponseEntity<?> sendCode(@RequestBody Map<String, Object> body) {
+        String email = emailVerificationService.normalizeEmail(clean(body.get("email"), 120));
+        String purpose = clean(body.get("purpose"), 30);
+        if (!emailVerificationService.isQqEmail(email)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "请输入有效的 QQ 邮箱"));
+        }
+        if (!isAllowedPurpose(purpose)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "验证码用途无效"));
+        }
+        if (EmailVerificationService.PURPOSE_REGISTER.equals(purpose)) {
+            if (userRepository.findByQqEmail(email).isPresent() || userRepository.findByEmail(email).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "该 QQ 邮箱已绑定账号"));
+            }
+        }
+        if (EmailVerificationService.PURPOSE_LOGIN.equals(purpose)
+                || EmailVerificationService.PURPOSE_RESET_PASSWORD.equals(purpose)) {
+            boolean exists = userRepository.findByQqEmail(email).isPresent() || userRepository.findByEmail(email).isPresent();
+            if (!exists) {
+                return ResponseEntity.badRequest().body(Map.of("message", "该邮箱尚未绑定账号"));
+            }
+        }
+
+        try {
+            emailVerificationService.sendCode(email, purpose);
+            return ResponseEntity.ok(Map.of("success", true, "message", "验证码已发送"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("message", e.getMessage()));
+        }
     }
 
     @PostMapping("/password/reset")
@@ -142,21 +161,18 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("success", true, "message", "密码已重置，请重新登录"));
     }
 
-    @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
-        Optional<User> optUser = userRepository.findByUsername(request.getAccount());
-        if (optUser.isEmpty()) {
-            return ResponseEntity.status(401).body(Map.of("message", "账号或密码错误"));
+    @GetMapping("/username/check")
+    public ResponseEntity<?> checkUsername(@RequestParam String username,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization) {
+        String cleanUsername = clean(username, 50);
+        if (cleanUsername.length() < 3) {
+            return ResponseEntity.badRequest().body(Map.of("available", false, "message", "用户名至少需要 3 个字符"));
         }
-
-        User user = optUser.get();
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            return ResponseEntity.status(401).body(Map.of("message", "账号或密码错误"));
-        }
-
-        String token = jwtUtil.generateToken(user.getUsername(), user.getRole());
-        AuthResponse response = new AuthResponse(token, user.getUsername(), user.getRole());
-        return ResponseEntity.ok(response);
+        Optional<User> current = currentUser(authorization);
+        boolean exists = current
+                .map(user -> userRepository.existsByUsernameAndIdNot(cleanUsername, user.getId()))
+                .orElseGet(() -> userRepository.existsByUsername(cleanUsername));
+        return ResponseEntity.ok(Map.of("available", !exists));
     }
 
     @GetMapping("/me")
@@ -224,6 +240,7 @@ public class AuthController {
             return ResponseEntity.status(400).body(Map.of("message", "验证码错误或已过期"));
         }
         user.setQqEmail(qqEmail);
+        user.setEmail(qqEmail);
         userRepository.save(user);
         return ResponseEntity.ok(toProfile(user));
     }
@@ -290,6 +307,10 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("success", true, "message", "密码已更新"));
     }
 
+    private AuthResponse authResponse(User user) {
+        return new AuthResponse(jwtUtil.generateToken(user.getUsername(), user.getRole()), user.getUsername(), user.getRole());
+    }
+
     private Optional<User> currentUser(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             return Optional.empty();
@@ -328,6 +349,7 @@ public class AuthController {
 
     private boolean isAllowedPurpose(String purpose) {
         return EmailVerificationService.PURPOSE_LOGIN.equals(purpose)
+                || EmailVerificationService.PURPOSE_REGISTER.equals(purpose)
                 || EmailVerificationService.PURPOSE_RESET_PASSWORD.equals(purpose)
                 || EmailVerificationService.PURPOSE_BIND_QQ.equals(purpose);
     }

@@ -7,15 +7,15 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "border-transparent bg-[#171916] text-primary-foreground",
-        secondary: "border-[#E4E8E5] bg-[#F4F6F5] text-[#343A35]",
+        default: "border-transparent bg-[var(--ui-button-primary-bg)] text-[var(--ui-button-primary-fg)]",
+        secondary: "border-[var(--ui-border)] bg-[var(--ui-muted)] text-[var(--ui-text-soft)]",
         destructive: "border-transparent bg-destructive text-destructive-foreground",
-        outline: "text-foreground",
-        success: "border-[#D7E8E0] bg-[#EEF7F3] text-[#1F5F53]",
-        warning: "border-[#DDE4DF] bg-[#F4F6F5] text-[#516B63]",
-        purple: "border-[#D7E8E0] bg-[#EEF7F3] text-[#1F5F53]",
-        blue: "border-[#DCE4E8] bg-[#F0F5F6] text-[#516B76]",
-        slate: "border-[#E4E8E5] bg-[#F4F6F5] text-[#74766F]",
+        outline: "text-[var(--ui-text)]",
+        success: "border-[var(--ui-border-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-strong)]",
+        warning: "border-[var(--ui-border)] bg-[var(--ui-muted)] text-[var(--ui-text-soft)]",
+        purple: "border-[var(--ui-border-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-strong)]",
+        blue: "border-[var(--ui-border)] bg-[var(--ui-muted)] text-[var(--ui-text-soft)]",
+        slate: "border-[var(--ui-border)] bg-[var(--ui-muted)] text-[var(--ui-text-muted)]",
       },
     },
     defaultVariants: {
