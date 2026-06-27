@@ -4,6 +4,7 @@ import type { UserRole } from "@/config/access"
 const AgentChat = lazy(() => import("@/pages/AgentChat"))
 const AgentExecutionCenter = lazy(() => import("@/pages/AgentExecutionCenter"))
 const AgentSquare = lazy(() => import("@/pages/AgentSquare"))
+const AdminConversations = lazy(() => import("@/pages/AdminConversations"))
 const AdminUsers = lazy(() => import("@/pages/AdminUsers"))
 const ApiIntegration = lazy(() => import("@/pages/ApiIntegration"))
 const Analysis = lazy(() => import("@/pages/Analysis"))
@@ -34,6 +35,7 @@ export const protectedRoutes: AppRoute[] = [
   { path: "trade-workspace", element: <TradeWorkspace /> },
   { path: "agent-square", element: <AgentSquare /> },
   { path: "agent-execution", element: <AgentExecutionCenter />, roles: ["admin"] },
+  { path: "admin/conversations", element: <AdminConversations />, roles: ["admin"] },
   { path: "inquiry", element: <InquiryScoring /> },
   { path: "copywriting", element: <CopyWriting /> },
   { path: "translate", element: <Translate /> },
