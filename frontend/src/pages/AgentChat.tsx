@@ -185,7 +185,7 @@ export default function AgentChat() {
   const loadSession = async (sid: string, signal?: AbortSignal) => {
     activeSessionRef.current = sid
     try {
-      const { data } = await api.get(`/agent/session/${sid}/history`, { signal })
+      const { data } = await api.get(`/v2/sessions/${sid}/history`, { signal })
       // 请求已被取消，不再更新状态
       if (signal?.aborted) return
       const records = data.records || []

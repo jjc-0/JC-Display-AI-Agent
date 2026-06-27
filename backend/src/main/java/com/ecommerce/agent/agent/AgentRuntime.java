@@ -89,7 +89,9 @@ public class AgentRuntime {
         long startTime = System.currentTimeMillis();
 
         // 1. 准备执行上下文
-        String sessionId = ensureSession(request.getSessionId(), request.getTaskType());
+        String requestUserId = request.getUserId();
+        String requestUsername = request.getUsername();
+        String sessionId = ensureSession(request.getSessionId(), request.getTaskType(), requestUserId, requestUsername);
         boolean isNewSession = request.getSessionId() == null
                 || !conversationManager.sessionExists(request.getSessionId());
 
@@ -104,7 +106,8 @@ public class AgentRuntime {
                 ? request.getMessage()
                 : (images.isEmpty() ? "你好" : "");
         conversationManager.addMessage(sessionId, "user",
-                images.isEmpty() ? userMessage : (userMessage + " [图片x" + images.size() + "]"));
+                images.isEmpty() ? userMessage : (userMessage + " [图片x" + images.size() + "]"),
+                null, 0L, request.getTaskType(), requestUserId, requestUsername);
 
         if (isNewSession) {
             titleService.autoTitle(sessionId, images.isEmpty() ? userMessage : userMessage);
@@ -197,12 +200,14 @@ public class AgentRuntime {
                     state.done = true;
                     state.answerSaved = true;
                     conversationManager.addMessage(sessionId, "assistant", state.finalAnswer,
-                            modelUsed, System.currentTimeMillis() - startTime);
+                            modelUsed, System.currentTimeMillis() - startTime,
+                            request.getTaskType(), requestUserId, requestUsername);
                 } else {
                     // 普通工具：将结果注入对话继续循环
                     conversationManager.addToolMessage(sessionId, "assistant",
                             "调用工具 " + toolResult.toolName(),
-                            toolResult.toolName(), toolResult.output());
+                            toolResult.toolName(), toolResult.output(),
+                            requestUserId, requestUsername);
 
                     if (toolResult.output() != null && !toolResult.output().isBlank()) {
                         currentMessage = "工具 " + toolResult.toolName() + " 返回结果:\n"
@@ -261,7 +266,8 @@ public class AgentRuntime {
         // 保存最终回答到对话历史（终端工具已保存则跳过）
         if (!state.answerSaved) {
             conversationManager.addMessage(sessionId, "assistant", state.finalAnswer,
-                    modelUsed, System.currentTimeMillis() - startTime);
+                    modelUsed, System.currentTimeMillis() - startTime,
+                    request.getTaskType(), requestUserId, requestUsername);
         }
 
         // 从对话中学习 (新记忆)
@@ -374,7 +380,8 @@ public class AgentRuntime {
                 : "查询 RAG 产品库状态失败: " + toolResult.error();
 
         long durationMs = System.currentTimeMillis() - startTime;
-        conversationManager.addMessage(sessionId, "assistant", answer, modelUsed, durationMs);
+        conversationManager.addMessage(sessionId, "assistant", answer, modelUsed, durationMs,
+                request.getTaskType(), request.getUserId(), request.getUsername());
 
         return AgentResponse.builder()
                 .sessionId(sessionId)
@@ -537,14 +544,14 @@ JC claw 不能读取完整微信通讯录。微信发送能力仅覆盖“文件
 
     private record EnhancedSystemPrompt(String prompt, RAGService.RAGContext ragContext) {}
 
-    private String ensureSession(String sessionId, String operationType) {
+    private String ensureSession(String sessionId, String operationType, String userId, String username) {
         if (sessionId != null && conversationManager.sessionExists(sessionId)) {
             return sessionId;
         }
         if (sessionId != null) {
-            return conversationManager.createSession(sessionId, null, operationType);
+            return conversationManager.createSession(sessionId, null, operationType, userId, username);
         }
-        return conversationManager.createSession(null, operationType);
+        return conversationManager.createSession(null, operationType, userId, username);
     }
 
     private boolean enableTools(AgentRequest request) {

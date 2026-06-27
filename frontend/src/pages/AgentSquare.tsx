@@ -105,6 +105,12 @@ const agentDefs: AgentDef[] = [
 
 const categories = ["全部", "对话", "分析", "创作", "翻译", "视觉"]
 
+const emptyStats: AgentStats = {
+  agents: {},
+  totalSessions: 0,
+  totalRecords: 0,
+}
+
 interface AgentStats {
   agents: Record<string, { sessionCount: number }>
   totalSessions: number
@@ -130,6 +136,11 @@ export default function AgentSquare() {
       setAgentStats(data as AgentStats)
     } catch (e: any) {
       if (signal?.aborted) return
+      if (e.response?.status === 403) {
+        setAgentStats(emptyStats)
+        setError("")
+        return
+      }
       setError(e.response?.data?.message || e.message || "获取数据失败")
     } finally {
       setLoading(false)

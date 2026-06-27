@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
   Check,
@@ -18,6 +18,7 @@ import CompanyLogoMark from "@/components/brand/CompanyLogoMark"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { canAccess, normalizeRole } from "@/config/access"
 import { navigation } from "@/config/navigation"
 import { AUTH_SPLASH_SEEN_KEY } from "@/features/auth/AuthShell"
 import { useThemeMode } from "@/hooks/useThemeMode"
@@ -67,7 +68,22 @@ export default function Layout() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
 
+  const userRole = normalizeRole(authRole)
+  const isAdmin = userRole === "admin"
+
+  const visibleNavigation = useMemo(
+    () =>
+      navigation
+        .map((group) => ({ ...group, items: group.items.filter((item) => canAccess(item.roles, userRole)) }))
+        .filter((group) => group.items.length > 0),
+    [userRole]
+  )
+
   const fetchSessions = useCallback(async () => {
+    if (normalizeRole(localStorage.getItem("jc-display-login-role")) !== "admin") {
+      setSessions([])
+      return
+    }
     setLoadingSessions(true)
     try {
       const { data } = await api.get("/agent/sessions")
@@ -123,7 +139,7 @@ export default function Layout() {
   }, [sidebarCollapsed])
 
   const currentSessionId = new URLSearchParams(location.search).get("session")
-  const flatNav = navigation.flatMap((group) => group.items)
+  const flatNav = visibleNavigation.flatMap((group) => group.items)
   const currentItem = flatNav.find((item) => location.pathname.startsWith(item.href))
   const currentTitle = currentItem?.label || "AI Agent 对话"
   const profileCreated = profile?.createdAt
@@ -146,7 +162,7 @@ export default function Layout() {
     if (!nextTitle) return
     try {
       await api.put(`/agent/session/${sessionId}/title`, { title: nextTitle })
-      setSessions((prev) => prev.map((item) => item.sessionId === sessionId ? { ...item, title: nextTitle } : item))
+      setSessions((prev) => prev.map((item) => (item.sessionId === sessionId ? { ...item, title: nextTitle } : item)))
     } finally {
       setEditingId(null)
     }
@@ -195,80 +211,84 @@ export default function Layout() {
         </div>
 
         <nav className={cn("min-h-0 flex-1 overflow-y-auto", sidebarCollapsed ? "px-2" : "px-3")}>
-          {navigation.filter((group) => group.title === "API").map(renderNavGroup)}
+          {visibleNavigation.filter((group) => group.title === "功能").map(renderNavGroup)}
 
-          <div className="mb-1">
-            <div className={cn("flex items-center justify-between px-3 pb-2 pt-3", sidebarCollapsed && "justify-center px-2")}>
-              <span className={cn("text-[10px] font-black uppercase tracking-[0.08em] text-[var(--ui-text-muted)]", sidebarCollapsed && "sr-only")}>
-                历史对话
-              </span>
-              {!sidebarCollapsed && (
-                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => navigate("/agent-chat")} title="新对话">
-                  <Plus size={13} />
-                </Button>
-              )}
-            </div>
+          {isAdmin && (
+            <div className="mb-1">
+              <div className={cn("flex items-center justify-between px-3 pb-2 pt-3", sidebarCollapsed && "justify-center px-2")}>
+                <span className={cn("text-[10px] font-black uppercase tracking-[0.08em] text-[var(--ui-text-muted)]", sidebarCollapsed && "sr-only")}>
+                  全局历史
+                </span>
+                {!sidebarCollapsed && (
+                  <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => navigate("/agent-chat")} title="新对话">
+                    <Plus size={13} />
+                  </Button>
+                )}
+              </div>
 
-            <div className="space-y-0.5">
-              {loadingSessions ? (
-                <div className="flex justify-center py-4">
-                  <Loader2 size={14} className="animate-spin text-[var(--ui-text-muted)]" />
-                </div>
-              ) : sessions.length === 0 ? (
-                !sidebarCollapsed && <p className="py-4 text-center text-[11px] text-[var(--ui-text-muted)]/60">暂无历史</p>
-              ) : sessions.map((session) => (
-                <div key={session.sessionId} className="group relative">
-                  {editingId === session.sessionId && !sidebarCollapsed ? (
-                    <div className="flex items-center gap-1 px-2 py-1">
-                      <Input
-                        autoFocus
-                        value={editValue}
-                        onChange={(event) => setEditValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") saveTitle(session.sessionId)
-                          if (event.key === "Escape") setEditingId(null)
-                        }}
-                        className="h-6 px-2 py-0 text-[11px]"
-                      />
-                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => saveTitle(session.sessionId)}>
-                        <Check size={11} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditingId(null)}>
-                        <X size={11} />
-                      </Button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/agent-chat?session=${session.sessionId}`)}
-                      onDoubleClick={() => {
-                        if (!sidebarCollapsed) {
-                          setEditingId(session.sessionId)
-                          setEditValue(session.title || "")
-                        }
-                      }}
-                      className={cn(
-                        "w-full cursor-pointer rounded-[10px] px-3 py-2 text-left text-[var(--ui-text-muted)] transition-colors hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]",
-                        sidebarCollapsed && "flex justify-center px-2",
-                        currentSessionId === session.sessionId && "bg-[var(--ui-accent)] text-[var(--ui-accent-strong)]"
+              <div className="space-y-0.5">
+                {loadingSessions ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 size={14} className="animate-spin text-[var(--ui-text-muted)]" />
+                  </div>
+                ) : sessions.length === 0 ? (
+                  !sidebarCollapsed && <p className="py-4 text-center text-[11px] text-[var(--ui-text-muted)]/60">暂无历史</p>
+                ) : (
+                  sessions.map((session) => (
+                    <div key={session.sessionId} className="group relative">
+                      {editingId === session.sessionId && !sidebarCollapsed ? (
+                        <div className="flex items-center gap-1 px-2 py-1">
+                          <Input
+                            autoFocus
+                            value={editValue}
+                            onChange={(event) => setEditValue(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") saveTitle(session.sessionId)
+                              if (event.key === "Escape") setEditingId(null)
+                            }}
+                            className="h-6 px-2 py-0 text-[11px]"
+                          />
+                          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => saveTitle(session.sessionId)}>
+                            <Check size={11} />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditingId(null)}>
+                            <X size={11} />
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/agent-chat?session=${session.sessionId}`)}
+                          onDoubleClick={() => {
+                            if (!sidebarCollapsed) {
+                              setEditingId(session.sessionId)
+                              setEditValue(session.title || "")
+                            }
+                          }}
+                          className={cn(
+                            "w-full cursor-pointer rounded-[10px] px-3 py-2 text-left text-[var(--ui-text-muted)] transition-colors hover:bg-[var(--ui-muted)] hover:text-[var(--ui-text)]",
+                            sidebarCollapsed && "flex justify-center px-2",
+                            currentSessionId === session.sessionId && "bg-[var(--ui-accent)] text-[var(--ui-accent-strong)]"
+                          )}
+                          title={sidebarCollapsed ? session.title || "未命名" : undefined}
+                        >
+                          <div className="flex items-center gap-2">
+                            <MessageSquare size={12} className="flex-shrink-0" />
+                            <span className={cn("flex-1 truncate text-[11px] font-medium", sidebarCollapsed && "hidden")}>{session.title || "未命名"}</span>
+                          </div>
+                          <div className={cn("mt-0.5 pl-5 text-[10px]", sidebarCollapsed && "hidden")}>
+                            {timeAgo(session.updatedAt)}
+                          </div>
+                        </button>
                       )}
-                      title={sidebarCollapsed ? session.title || "未命名" : undefined}
-                    >
-                      <div className="flex items-center gap-2">
-                        <MessageSquare size={12} className="flex-shrink-0" />
-                        <span className={cn("flex-1 truncate text-[11px] font-medium", sidebarCollapsed && "hidden")}>{session.title || "未命名"}</span>
-                      </div>
-                      <div className={cn("mt-0.5 pl-5 text-[10px]", sidebarCollapsed && "hidden")}>
-                        {timeAgo(session.updatedAt)}
-                      </div>
-                    </button>
-                  )}
-                </div>
-              ))}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {navigation.filter((group) => group.title !== "API").map(renderNavGroup)}
+          {visibleNavigation.filter((group) => group.title !== "功能").map(renderNavGroup)}
         </nav>
 
         <div className="border-t border-[var(--ui-border)] p-3">
@@ -331,7 +351,7 @@ export default function Layout() {
                 <CompanyLogoMark className="h-9 w-11" decorative />
                 <div className="hidden leading-tight sm:block">
                   <div className="max-w-[160px] truncate text-sm font-black text-[var(--ui-text)]">{authAccount || "未登录"}</div>
-                  <div className="text-[10px] font-semibold text-[var(--ui-text-muted)]">{authRole === "admin" ? "Admin" : "User"}</div>
+                  <div className="text-[10px] font-semibold text-[var(--ui-text-muted)]">{isAdmin ? "Admin" : "User"}</div>
                 </div>
               </button>
 
@@ -348,12 +368,12 @@ export default function Layout() {
                         <div className="truncate text-sm font-black text-[var(--ui-text)]">{profile?.email || profile?.username || authAccount || "未登录"}</div>
                         <div className="truncate text-xs font-medium text-[var(--ui-text-muted)]">{profile?.username || authAccount || "未登录"}</div>
                       </div>
-                      <Badge variant="success" className="text-[10px]">{authRole === "admin" ? "Admin" : "User"}</Badge>
+                      <Badge variant={isAdmin ? "warning" : "success"} className="text-[10px]">{isAdmin ? "Admin" : "User"}</Badge>
                     </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <MenuMetric label="账号角色" value={authRole === "admin" ? "管理员" : "普通用户"} />
+                    <MenuMetric label="账号角色" value={isAdmin ? "管理员" : "普通用户"} />
                     <MenuMetric label="注册时间" value={profileCreated} />
                   </div>
 
@@ -375,7 +395,7 @@ export default function Layout() {
                   <button
                     type="button"
                     onClick={logout}
-                    className="mt-3 flex w-full items-center gap-3 rounded-[8px] bg-[var(--ui-surface)] px-4 py-3 text-left shadow-[var(--ui-shadow-card)] transition-colors hover:bg-red-50"
+                    className="mt-3 flex w-full items-center gap-3 rounded-[8px] bg-[var(--ui-surface)] px-4 py-3 text-left shadow-[var(--ui-shadow-card)] transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
                   >
                     <LogOut size={18} className="text-red-600" />
                     <div>

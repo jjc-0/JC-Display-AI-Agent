@@ -15,7 +15,13 @@ public interface ConversationSessionRepository extends JpaRepository<Conversatio
 
     List<ConversationSession> findAllByOrderByUpdatedAtDesc();
 
+    List<ConversationSession> findByUserIdOrderByUpdatedAtDesc(String userId);
+
+    List<ConversationSession> findByUsernameOrderByUpdatedAtDesc(String username);
+
     List<ConversationSession> findByOperationTypeOrderByUpdatedAtDesc(String operationType);
+
+    List<ConversationSession> findByUserIdAndOperationTypeOrderByUpdatedAtDesc(String userId, String operationType);
 
     @Query("SELECT s.operationType, COUNT(s) FROM ConversationSession s GROUP BY s.operationType ORDER BY COUNT(s) DESC")
     List<Object[]> countByOperationType();

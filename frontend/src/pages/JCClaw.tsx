@@ -287,7 +287,13 @@ export default function JCClaw() {
 
           <Button
             size="sm"
-            className="w-full h-9 rounded-[8px] text-[12px] font-semibold bg-[#17211F] hover:bg-[#22312D] shadow-[0_18px_36px_-26px_rgba(23,33,31,0.55)] active:scale-[0.98] transition-all"
+            variant="outline"
+            className={cn(
+              "w-full h-9 rounded-[8px] text-[12px] font-semibold shadow-[0_18px_36px_-26px_rgba(23,33,31,0.55)] active:scale-[0.98] transition-all",
+              isBound
+                ? "border-[#1D5D34] bg-[#063319] text-[#58E48C] hover:bg-[#0A4523]"
+                : "border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-muted)] disabled:opacity-100"
+            )}
             disabled={!isBound}
           >
             <MessageCircle size={14} />

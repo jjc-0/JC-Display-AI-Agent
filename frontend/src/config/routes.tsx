@@ -1,8 +1,10 @@
 import { lazy, type ReactNode } from "react"
+import type { UserRole } from "@/config/access"
 
 const AgentChat = lazy(() => import("@/pages/AgentChat"))
 const AgentExecutionCenter = lazy(() => import("@/pages/AgentExecutionCenter"))
 const AgentSquare = lazy(() => import("@/pages/AgentSquare"))
+const AdminUsers = lazy(() => import("@/pages/AdminUsers"))
 const ApiIntegration = lazy(() => import("@/pages/ApiIntegration"))
 const Analysis = lazy(() => import("@/pages/Analysis"))
 const AuthCenter = lazy(() => import("@/pages/AuthCenter"))
@@ -23,20 +25,21 @@ const WorkflowBuilder = lazy(() => import("@/pages/WorkflowBuilder"))
 export interface AppRoute {
   path: string
   element: ReactNode
+  roles?: UserRole[]
 }
 
 export const protectedRoutes: AppRoute[] = [
-  { path: "dashboard", element: <Dashboard /> },
+  { path: "dashboard", element: <Dashboard />, roles: ["admin"] },
   { path: "agent-chat", element: <AgentChat /> },
   { path: "trade-workspace", element: <TradeWorkspace /> },
   { path: "agent-square", element: <AgentSquare /> },
-  { path: "agent-execution", element: <AgentExecutionCenter /> },
+  { path: "agent-execution", element: <AgentExecutionCenter />, roles: ["admin"] },
   { path: "inquiry", element: <InquiryScoring /> },
   { path: "copywriting", element: <CopyWriting /> },
   { path: "translate", element: <Translate /> },
   { path: "analysis", element: <Analysis /> },
   { path: "image-recognition", element: <ImageRecognition /> },
-  { path: "knowledge-base", element: <KnowledgeBase /> },
+  { path: "knowledge-base", element: <KnowledgeBase />, roles: ["admin"] },
   { path: "templates", element: <Templates /> },
   { path: "channels", element: <Channels /> },
   { path: "api-integration", element: <ApiIntegration /> },
@@ -45,4 +48,5 @@ export const protectedRoutes: AppRoute[] = [
   { path: "jc-claw", element: <JCClaw /> },
   { path: "product-image", element: <ProductImage /> },
   { path: "profile", element: <Profile /> },
+  { path: "admin/users", element: <AdminUsers />, roles: ["admin"] },
 ]

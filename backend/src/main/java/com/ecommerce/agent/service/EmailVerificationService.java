@@ -168,13 +168,11 @@ public class EmailVerificationService {
     private String textContent(String purpose, String code) {
         return """
                 JC Display AI 验证码
-
                 用途：%s
                 验证码：%s
 
                 验证码 10 分钟内有效，请勿向任何人透露。
                 如果不是您本人操作，请忽略本邮件。
-
                 Shenzhen JC Display Packaging Co., Ltd. 保留全部权利。
                 """.formatted(actionFor(purpose), code);
     }
@@ -238,7 +236,7 @@ public class EmailVerificationService {
                                 <tr>
                                   <td style="padding:30px 32px 22px 32px;background:linear-gradient(135deg,#F8FBFA 0%%,#FFFFFF 52%%,#EEF7F3 100%%);border-bottom:1px solid #E4E8E5;">
                                     <div style="display:inline-block;padding:6px 10px;border:1px solid #D7E8E0;border-radius:999px;background:#FFFFFF;color:#1F5F53;font-size:12px;font-weight:900;letter-spacing:0.08em;">SECURITY VERIFICATION</div>
-                                    <h1 style="margin:18px 0 0 0;font-size:28px;line-height:1.14;font-weight:900;letter-spacing:-0.03em;color:#17211F;">杰创展示智能工作区验证码</h1>
+                                    <h1 style="margin:18px 0 0 0;font-size:28px;line-height:1.14;font-weight:900;letter-spacing:-0.03em;color:#17211F;">JC Display AI 验证码</h1>
                                     <p style="margin:12px 0 0 0;font-size:14px;line-height:1.7;color:#62706A;">您正在进行：<strong style="color:#17211F;">%s</strong>。请在当前页面输入下方验证码完成验证。</p>
                                   </td>
                                 </tr>

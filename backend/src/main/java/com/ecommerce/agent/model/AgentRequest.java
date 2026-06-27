@@ -22,4 +22,6 @@ public class AgentRequest {
     private List<ConversationMessage> history;
     private boolean enableTools;
     private String preferredModel;
+    private String userId;
+    private String username;
 }

@@ -17,6 +17,10 @@ public interface ConversationRecordRepository extends JpaRepository<Conversation
 
     List<ConversationRecord> findBySessionIdOrderByCreatedAtDesc(String sessionId);
 
+    List<ConversationRecord> findByUserIdOrderByCreatedAtDesc(String userId);
+
+    List<ConversationRecord> findByUsernameOrderByCreatedAtDesc(String username);
+
     @Query("SELECT r FROM ConversationRecord r WHERE r.sessionId = :sessionId ORDER BY r.createdAt ASC")
     List<ConversationRecord> findHistoryForLLM(@Param("sessionId") String sessionId);
 
@@ -30,4 +34,9 @@ public interface ConversationRecordRepository extends JpaRepository<Conversation
 
     @Query("SELECT r FROM ConversationRecord r WHERE r.createdAt BETWEEN :start AND :end ORDER BY r.createdAt DESC")
     List<ConversationRecord> findByDateRange(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    @Query("SELECT r FROM ConversationRecord r WHERE r.userId = :userId AND r.createdAt BETWEEN :start AND :end ORDER BY r.createdAt DESC")
+    List<ConversationRecord> findByUserIdAndDateRange(@Param("userId") String userId,
+                                                      @Param("start") LocalDateTime start,
+                                                      @Param("end") LocalDateTime end);
 }

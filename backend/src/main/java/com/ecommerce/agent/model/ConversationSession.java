@@ -10,7 +10,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "conversation_sessions", indexes = {
-        @Index(name = "idx_session_id", columnList = "sessionId", unique = true)
+        @Index(name = "idx_session_id", columnList = "sessionId", unique = true),
+        @Index(name = "idx_session_user_updated", columnList = "userId, updatedAt")
 })
 @Data
 @Builder
@@ -40,6 +41,12 @@ public class ConversationSession {
 
     @Column(length = 30)
     private String operationType;
+
+    @Column(length = 64)
+    private String userId;
+
+    @Column(length = 80)
+    private String username;
 
     @PrePersist
     protected void onCreate() {

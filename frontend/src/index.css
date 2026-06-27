@@ -74,52 +74,62 @@ html[data-theme="light"] {
 }
 
 html[data-theme="dark"] {
-  --color-background: #0B0F0D;
-  --color-foreground: #EEF5F1;
-  --color-card: #111814;
-  --color-card-foreground: #EEF5F1;
-  --color-popover: #111814;
-  --color-popover-foreground: #EEF5F1;
-  --color-primary: #EEF5F1;
-  --color-primary-foreground: #0B0F0D;
-  --color-secondary: #17211C;
-  --color-secondary-foreground: #DCE8E1;
-  --color-muted: #17211C;
-  --color-muted-foreground: #9EAAA3;
-  --color-accent: #163323;
-  --color-accent-foreground: #9FE2B7;
-  --color-border: #25342D;
-  --color-input: #0F1512;
-  --color-ring: rgba(159, 226, 183, 0.24);
-  --ui-bg: #0B0F0D;
-  --ui-page: #0B0F0D;
-  --ui-surface: #111814;
-  --ui-surface-subtle: #151E19;
-  --ui-muted: #17211C;
-  --ui-accent: #163323;
-  --ui-accent-strong: #9FE2B7;
-  --ui-text: #EEF5F1;
-  --ui-text-soft: #DCE8E1;
-  --ui-text-muted: #9EAAA3;
-  --ui-border: #25342D;
-  --ui-border-accent: #244838;
-  --ui-button-primary-bg: #EEF5F1;
-  --ui-button-primary-fg: #0B0F0D;
-  --ui-button-primary-hover: #FFFFFF;
-  --ui-input-bg: #0F1512;
-  --ui-input-border: #2B3C33;
+  --color-background: #000000;
+  --color-foreground: #FFFFFF;
+  --color-card: #080808;
+  --color-card-foreground: #FFFFFF;
+  --color-popover: #080808;
+  --color-popover-foreground: #FFFFFF;
+  --color-primary: #2DD36F;
+  --color-primary-foreground: #000000;
+  --color-secondary: #101010;
+  --color-secondary-foreground: #F5F5F5;
+  --color-muted: #101010;
+  --color-muted-foreground: #B8B8B8;
+  --color-accent: #062E17;
+  --color-accent-foreground: #58E48C;
+  --color-border: #242424;
+  --color-input: #0A0A0A;
+  --color-ring: rgba(45, 211, 111, 0.34);
+  --ui-bg: #000000;
+  --ui-page: #000000;
+  --ui-surface: #080808;
+  --ui-surface-subtle: #101010;
+  --ui-muted: #151515;
+  --ui-accent: #063319;
+  --ui-accent-strong: #58E48C;
+  --ui-text: #FFFFFF;
+  --ui-text-soft: #F2F2F2;
+  --ui-text-muted: #B8B8B8;
+  --ui-border: #242424;
+  --ui-border-accent: #1D5D34;
+  --ui-button-primary-bg: #2DD36F;
+  --ui-button-primary-fg: #000000;
+  --ui-button-primary-hover: #58E48C;
+  --ui-input-bg: #0A0A0A;
+  --ui-input-border: #2A2A2A;
   --ui-shadow-card: 0 18px 46px -34px rgba(0, 0, 0, 0.78);
   --ui-shadow-panel: 0 22px 58px -40px rgba(0, 0, 0, 0.82);
 }
 
 html[data-theme="dark"] .bg-white,
-html[data-theme="dark"] .bg-\[\#FFFFFF\] {
+html[data-theme="dark"] .bg-\[\#FFFFFF\],
+html[data-theme="dark"] .bg-\[\#fff\],
+html[data-theme="dark"] .bg-card {
   background-color: var(--ui-surface) !important;
 }
 
 html[data-theme="dark"] .bg-\[\#F8FBFA\],
 html[data-theme="dark"] .bg-\[\#F7F9F8\],
-html[data-theme="dark"] .bg-\[\#F6F8F7\] {
+html[data-theme="dark"] .bg-\[\#F6F8F7\],
+html[data-theme="dark"] .bg-\[\#EEF7F3\],
+html[data-theme="dark"] .bg-\[\#EFF8F3\],
+html[data-theme="dark"] .bg-\[\#ECF8F1\],
+html[data-theme="dark"] .bg-white\/60,
+html[data-theme="dark"] .bg-white\/70,
+html[data-theme="dark"] .bg-white\/72,
+html[data-theme="dark"] .bg-white\/80,
+html[data-theme="dark"] .bg-white\/90 {
   background-color: var(--ui-surface-subtle) !important;
 }
 
@@ -137,7 +147,9 @@ html[data-theme="dark"] .border-\[\#DDE6E1\] {
 
 html[data-theme="dark"] .border-\[\#D7E8E0\],
 html[data-theme="dark"] .border-\[\#BFE2DA\],
-html[data-theme="dark"] .border-\[\#D8E7DF\] {
+html[data-theme="dark"] .border-\[\#D8E7DF\],
+html[data-theme="dark"] .border-white,
+html[data-theme="dark"] .border-white\/80 {
   border-color: var(--ui-border-accent) !important;
 }
 
@@ -145,7 +157,10 @@ html[data-theme="dark"] .text-\[\#171916\],
 html[data-theme="dark"] .text-\[\#17211F\],
 html[data-theme="dark"] .text-\[\#151B1A\],
 html[data-theme="dark"] .text-\[\#202826\],
-html[data-theme="dark"] .text-\[\#22312D\] {
+html[data-theme="dark"] .text-\[\#22312D\],
+html[data-theme="dark"] .text-black,
+html[data-theme="dark"] .text-card-foreground,
+html[data-theme="dark"] .text-foreground {
   color: var(--ui-text) !important;
 }
 
@@ -158,6 +173,8 @@ html[data-theme="dark"] .text-\[\#74766F\],
 html[data-theme="dark"] .text-\[\#6F716B\],
 html[data-theme="dark"] .text-\[\#6A766F\],
 html[data-theme="dark"] .text-\[\#62706A\],
+html[data-theme="dark"] .text-\[\#59615A\],
+html[data-theme="dark"] .text-\[\#477260\],
 html[data-theme="dark"] .text-\[\#A8B7AF\],
 html[data-theme="dark"] .text-muted-foreground {
   color: var(--ui-text-muted) !important;
@@ -166,8 +183,93 @@ html[data-theme="dark"] .text-muted-foreground {
 html[data-theme="dark"] .hover\:bg-\[\#F4F6F5\]:hover,
 html[data-theme="dark"] .hover\:bg-\[\#F8FBFA\]:hover,
 html[data-theme="dark"] .hover\:bg-\[\#F6F8F7\]:hover,
-html[data-theme="dark"] .hover\:bg-muted:hover {
+html[data-theme="dark"] .hover\:bg-muted:hover,
+html[data-theme="dark"] .hover\:bg-white\/60:hover {
   background-color: var(--ui-muted) !important;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  color: var(--ui-text);
+  background-color: var(--ui-input-bg);
+  border-color: var(--ui-input-border);
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: rgba(184, 184, 184, 0.68);
+}
+
+html[data-theme="dark"] button:disabled {
+  color: var(--ui-text-muted);
+}
+
+html[data-theme="dark"] .page-hero,
+html[data-theme="dark"] .console-hero,
+html[data-theme="dark"] .console-hero-stat,
+html[data-theme="dark"] .console-section-bar,
+html[data-theme="dark"] .trade-chip,
+html[data-theme="dark"] .trade-signal-card,
+html[data-theme="dark"] .trade-pipeline-step,
+html[data-theme="dark"] .trade-scenario-card,
+html[data-theme="dark"] .trade-owner-chip,
+html[data-theme="dark"] .trade-action-chip,
+html[data-theme="dark"] .trade-playbook,
+html[data-theme="dark"] .auth-input {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-text) !important;
+  box-shadow: var(--ui-shadow-card);
+}
+
+html[data-theme="dark"] .trade-workspace-hero,
+html[data-theme="dark"] .console-metric-card,
+html[data-theme="dark"] .console-metric-card--gold,
+html[data-theme="dark"] .console-metric-card--slate {
+  background:
+    linear-gradient(135deg, rgba(8, 8, 8, 0.98), rgba(16, 16, 16, 0.96)),
+    radial-gradient(circle at 92% 8%, rgba(45, 211, 111, 0.12), transparent 34%) !important;
+  border-color: var(--ui-border) !important;
+}
+
+html[data-theme="dark"] .trade-workspace-brief,
+html[data-theme="dark"] .console-metric-icon,
+html[data-theme="dark"] .profile-icon-cell {
+  background: var(--ui-surface-subtle) !important;
+  border-color: var(--ui-border-accent) !important;
+  color: var(--ui-accent-strong) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .page-hero h1,
+html[data-theme="dark"] .console-hero-stat strong,
+html[data-theme="dark"] .trade-pipeline-step strong {
+  color: var(--ui-text) !important;
+}
+
+html[data-theme="dark"] .page-hero p,
+html[data-theme="dark"] .page-kicker,
+html[data-theme="dark"] .trade-chip,
+html[data-theme="dark"] .console-hero-stat span,
+html[data-theme="dark"] .console-hero-stat small,
+html[data-theme="dark"] .trade-pipeline-step span,
+html[data-theme="dark"] .trade-pipeline-step small {
+  color: var(--ui-text-muted) !important;
+}
+
+html[data-theme="dark"] .console-hero > * + * {
+  border-left-color: var(--ui-border) !important;
+}
+
+html[data-theme="dark"] .console-progress {
+  background: var(--ui-muted) !important;
+}
+
+html[data-theme="dark"] .console-progress span,
+html[data-theme="dark"] .page-kicker::before,
+html[data-theme="dark"] .trade-signal-card::before {
+  background: var(--ui-accent-strong) !important;
 }
 
 * {

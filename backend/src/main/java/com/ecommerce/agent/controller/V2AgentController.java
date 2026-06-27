@@ -15,6 +15,7 @@ import com.ecommerce.agent.tool.ToolRegistry;
 import com.ecommerce.agent.tool.ToolRouter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -67,7 +68,8 @@ public class V2AgentController {
 
     /** v2 核心对话 — 使用 AgentRuntime while(!done) 循环 */
     @PostMapping("/agent/run")
-    public ResponseEntity<Map<String, Object>> agentRun(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> agentRun(@RequestBody Map<String, Object> body,
+                                                        Authentication authentication) {
         String message = (String) body.getOrDefault("message", "");
         String sessionId = (String) body.getOrDefault("sessionId", null);
         boolean enableTools = Boolean.TRUE.equals(body.get("enableTools"));
@@ -90,6 +92,8 @@ public class V2AgentController {
                 .taskType("chat")
                 .enableTools(enableTools)
                 .parameters(params)
+                .userId(currentUsername(authentication))
+                .username(currentUsername(authentication))
                 .build();
 
         AgentResponse response = agentRuntime.execute(request);
@@ -283,7 +287,11 @@ public class V2AgentController {
     // ═══════════════════════════════════════════════════════════════
 
     @GetMapping("/sessions/{sessionId}/history")
-    public ResponseEntity<Map<String, Object>> getHistory(@PathVariable String sessionId) {
+    public ResponseEntity<Map<String, Object>> getHistory(@PathVariable String sessionId,
+                                                          Authentication authentication) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, currentUsername(authentication)) && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权查看该对话记录"));
+        }
         List<ConversationMessage> history = conversationManager.getHistory(sessionId);
         return ResponseEntity.ok(Map.of("records", history.stream().map(msg -> {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -293,6 +301,13 @@ public class V2AgentController {
             m.put("toolResult", msg.getToolResult());
             return m;
         }).toList()));
+    }
+
+    @GetMapping("/sessions")
+    public ResponseEntity<Map<String, Object>> getMySessions(@RequestParam(required = false) String type,
+                                                             Authentication authentication) {
+        String username = currentUsername(authentication);
+        return ResponseEntity.ok(Map.of("sessions", conversationManager.getSessionListForUser(username, type)));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -321,6 +336,15 @@ public class V2AgentController {
         m.put("toolCalls", tc);
         if (r.getMetadata() != null) m.putAll(r.getMetadata());
         return m;
+    }
+
+    private String currentUsername(Authentication authentication) {
+        return authentication != null ? authentication.getName() : "user";
+    }
+
+    private boolean isAdmin(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 
     private Map<String, Object> toTaskMap(AgentTask t) {

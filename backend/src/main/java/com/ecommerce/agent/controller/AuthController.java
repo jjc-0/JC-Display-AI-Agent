@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -60,7 +61,7 @@ public class AuthController {
             return ResponseEntity.status(400).body(Map.of("message", "验证码错误或已过期"));
         }
 
-        User user = new User(username, passwordEncoder.encode(request.getPassword()), request.getRole());
+        User user = new User(username, passwordEncoder.encode(request.getPassword()), normalizeRole(request.getRole()));
         user.setQqEmail(qqEmail);
         user.setEmail(qqEmail);
         userRepository.save(user);
@@ -79,10 +80,15 @@ public class AuthController {
         }
 
         User user = optUser.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             return ResponseEntity.status(401).body(Map.of("message", "账号或密码错误"));
         }
 
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
         return ResponseEntity.ok(authResponse(user));
     }
 
@@ -100,7 +106,13 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("message", "该邮箱尚未绑定账号"));
         }
 
-        return ResponseEntity.ok(authResponse(optUser.get()));
+        User user = optUser.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
+        return ResponseEntity.ok(authResponse(user));
     }
 
     @PostMapping("/code/send")
@@ -181,7 +193,11 @@ public class AuthController {
         if (current.isEmpty()) {
             return ResponseEntity.status(401).body(Map.of("message", "登录已失效，请重新登录"));
         }
-        return ResponseEntity.ok(toProfile(current.get()));
+        User user = current.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
+        return ResponseEntity.ok(toProfile(user));
     }
 
     @PutMapping("/profile")
@@ -193,6 +209,9 @@ public class AuthController {
         }
 
         User user = current.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
         boolean usernameChanged = false;
         String username = clean(body.get("username"), 50);
         if (!username.isBlank() && !username.equals(user.getUsername())) {
@@ -228,6 +247,9 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("message", "登录已失效，请重新登录"));
         }
         User user = current.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
         String qqEmail = emailVerificationService.normalizeEmail(clean(body.get("qqEmail"), 120));
         String code = clean(body.get("code"), 20);
         if (!emailVerificationService.isQqEmail(qqEmail)) {
@@ -274,6 +296,9 @@ public class AuthController {
         Files.copy(file.getInputStream(), target);
 
         User user = current.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
         user.setAvatarUrl("/uploads/avatars/" + filename);
         userRepository.save(user);
         return ResponseEntity.ok(toProfile(user));
@@ -298,6 +323,9 @@ public class AuthController {
         }
 
         User user = current.get();
+        if (!user.isEnabled()) {
+            return ResponseEntity.status(403).body(Map.of("message", "账号已被禁用，请联系管理员"));
+        }
         if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
             return ResponseEntity.status(400).body(Map.of("message", "当前密码不正确"));
         }
@@ -335,6 +363,8 @@ public class AuthController {
         profile.put("department", valueOrDefault(user.getDepartment(), ""));
         profile.put("jobTitle", valueOrDefault(user.getJobTitle(), ""));
         profile.put("phone", valueOrDefault(user.getPhone(), ""));
+        profile.put("enabled", user.isEnabled());
+        profile.put("lastLoginAt", user.getLastLoginAt() != null ? user.getLastLoginAt().toString() : null);
         profile.put("createdAt", user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
         profile.put("updatedAt", user.getUpdatedAt() != null ? user.getUpdatedAt().toString() : null);
         return profile;
@@ -345,6 +375,10 @@ public class AuthController {
         String s = value.toString().trim();
         if (s.length() > maxLength) return s.substring(0, maxLength);
         return s;
+    }
+
+    private String normalizeRole(String role) {
+        return "admin".equalsIgnoreCase(role) ? "admin" : "user";
     }
 
     private boolean isAllowedPurpose(String purpose) {

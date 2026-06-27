@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { Suspense } from "react"
 import Layout from "@/components/layout/Layout"
+import { canAccess, defaultRouteForRole } from "@/config/access"
 import { protectedRoutes } from "@/config/routes"
 import Login from "@/pages/Login"
 import Register from "@/pages/Register"
@@ -8,6 +9,11 @@ import Register from "@/pages/Register"
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("jc-auth-token")
   return token ? <>{children}</> : <Navigate to="/login" replace />
+}
+
+function RequireRole({ roles, children }: { roles?: Array<"admin" | "user">; children: React.ReactNode }) {
+  const role = localStorage.getItem("jc-display-login-role")
+  return canAccess(roles, role) ? <>{children}</> : <Navigate to={defaultRouteForRole(role)} replace />
 }
 
 export default function App() {
@@ -18,15 +24,19 @@ export default function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/new-user" element={<Register />} />
         <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-          <Route index element={<Navigate to="/agent-chat" replace />} />
+          <Route index element={<Navigate to={defaultRouteForRole(localStorage.getItem("jc-display-login-role"))} replace />} />
           {protectedRoutes.map((route) => (
             <Route
               key={route.path}
               path={route.path}
-              element={<Suspense fallback={<RouteLoading />}>{route.element}</Suspense>}
+              element={
+                <RequireRole roles={route.roles}>
+                  <Suspense fallback={<RouteLoading />}>{route.element}</Suspense>
+                </RequireRole>
+              }
             />
           ))}
-          <Route path="*" element={<Navigate to="/agent-chat" replace />} />
+          <Route path="*" element={<Navigate to={defaultRouteForRole(localStorage.getItem("jc-display-login-role"))} replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

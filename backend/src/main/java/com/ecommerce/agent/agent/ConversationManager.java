@@ -43,7 +43,15 @@ public class ConversationManager {
     }
 
     /** 使用指定 sessionId 创建会话（用于微信等外部渠道绑定固定会话） */
+    public String createSession(String title, String operationType, String userId, String username) {
+        return createSession(UUID.randomUUID().toString(), title, operationType, userId, username);
+    }
+
     public String createSession(String sessionId, String title, String operationType) {
+        return createSession(sessionId, title, operationType, null, null);
+    }
+
+    public String createSession(String sessionId, String title, String operationType, String userId, String username) {
         // 如果 DB 中已存在（服务重启后），不覆盖，直接恢复到内存
         sessions.put(sessionId, new ArrayDeque<>());
 
@@ -58,12 +66,16 @@ public class ConversationManager {
                             .createdAt(LocalDateTime.now())
                             .updatedAt(LocalDateTime.now())
                             .messageCount(0)
+                            .userId(userId)
+                            .username(username)
                             .build();
                     sessionRepository.save(session);
                 } else {
                     // 恢复：更新 title + updatedAt
                     sessionRepository.findBySessionId(sessionId).ifPresent(s -> {
                         if (title != null) s.setTitle(title);
+                        if ((s.getUserId() == null || s.getUserId().isBlank()) && userId != null) s.setUserId(userId);
+                        if ((s.getUsername() == null || s.getUsername().isBlank()) && username != null) s.setUsername(username);
                         s.setUpdatedAt(LocalDateTime.now());
                         sessionRepository.save(s);
                     });
@@ -85,8 +97,20 @@ public class ConversationManager {
         addMessageInternal(sessionId, role, content, modelUsed, processingTimeMs, null);
     }
 
+    public void addMessage(String sessionId, String role, String content,
+                           String modelUsed, long processingTimeMs,
+                           String operationType, String userId, String username) {
+        addMessageInternal(sessionId, role, content, modelUsed, processingTimeMs, operationType, userId, username);
+    }
+
     private void addMessageInternal(String sessionId, String role, String content,
                                      String modelUsed, Long processingTimeMs, String operationType) {
+        addMessageInternal(sessionId, role, content, modelUsed, processingTimeMs, operationType, null, null);
+    }
+
+    private void addMessageInternal(String sessionId, String role, String content,
+                                     String modelUsed, Long processingTimeMs, String operationType,
+                                     String userId, String username) {
         Deque<ConversationMessage> history = sessions.computeIfAbsent(sessionId, k -> new ArrayDeque<>());
         ConversationMessage msg = ConversationMessage.builder()
                 .role(role)
@@ -107,12 +131,16 @@ public class ConversationManager {
                         .modelUsed(modelUsed)
                         .processingTimeMs(processingTimeMs)
                         .operationType(operationType)
+                        .userId(userId)
+                        .username(username)
                         .createdAt(LocalDateTime.now())
                         .build();
                 recordRepository.save(record);
 
                 sessionRepository.findBySessionId(sessionId).ifPresent(s -> {
                     s.setMessageCount(s.getMessageCount() != null ? s.getMessageCount() + 1 : 1);
+                    if ((s.getUserId() == null || s.getUserId().isBlank()) && userId != null) s.setUserId(userId);
+                    if ((s.getUsername() == null || s.getUsername().isBlank()) && username != null) s.setUsername(username);
                     s.setUpdatedAt(LocalDateTime.now());
                     sessionRepository.save(s);
                 });
@@ -124,6 +152,12 @@ public class ConversationManager {
 
     public void addToolMessage(String sessionId, String role, String content,
                                 String toolName, String toolResult) {
+        addToolMessage(sessionId, role, content, toolName, toolResult, null, null);
+    }
+
+    public void addToolMessage(String sessionId, String role, String content,
+                                String toolName, String toolResult,
+                                String userId, String username) {
         Deque<ConversationMessage> history = sessions.computeIfAbsent(sessionId, k -> new ArrayDeque<>());
         ConversationMessage msg = ConversationMessage.builder()
                 .role(role)
@@ -145,12 +179,16 @@ public class ConversationManager {
                         .content(content)
                         .toolName(toolName)
                         .toolResult(toolResult)
+                        .userId(userId)
+                        .username(username)
                         .createdAt(LocalDateTime.now())
                         .build();
                 recordRepository.save(record);
 
                 sessionRepository.findBySessionId(sessionId).ifPresent(s -> {
                     s.setMessageCount(s.getMessageCount() != null ? s.getMessageCount() + 1 : 1);
+                    if ((s.getUserId() == null || s.getUserId().isBlank()) && userId != null) s.setUserId(userId);
+                    if ((s.getUsername() == null || s.getUsername().isBlank()) && username != null) s.setUsername(username);
                     s.setUpdatedAt(LocalDateTime.now());
                     sessionRepository.save(s);
                 });
@@ -288,6 +326,19 @@ public class ConversationManager {
         }
     }
 
+    public List<Map<String, Object>> getSessionListForUser(String userId, String operationType) {
+        if (!isDbAvailable() || userId == null || userId.isBlank()) return Collections.emptyList();
+        try {
+            List<ConversationSession> sessions = operationType != null && !operationType.isBlank()
+                    ? sessionRepository.findByUserIdAndOperationTypeOrderByUpdatedAtDesc(userId, operationType)
+                    : sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId);
+            return mapSessionList(sessions);
+        } catch (Exception e) {
+            log.warn("User session list query failed: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
     private List<Map<String, Object>> mapSessionList(List<ConversationSession> sessions) {
         List<Map<String, Object>> result = new ArrayList<>();
         for (ConversationSession s : sessions) {
@@ -296,6 +347,8 @@ public class ConversationManager {
             info.put("title", s.getTitle() != null ? s.getTitle() : "Untitled");
             info.put("operationType", s.getOperationType());
             info.put("messageCount", s.getMessageCount() != null ? s.getMessageCount() : 0);
+            info.put("userId", s.getUserId());
+            info.put("username", s.getUsername());
             info.put("createdAt", s.getCreatedAt() != null ? s.getCreatedAt().toString() : "");
             info.put("updatedAt", s.getUpdatedAt() != null ? s.getUpdatedAt().toString() : "");
             result.add(info);
@@ -311,6 +364,18 @@ public class ConversationManager {
         } catch (Exception e) {
             log.warn("DB history query failed: {}", e.getMessage());
             return Collections.emptyList();
+        }
+    }
+
+    public boolean isSessionOwnedBy(String sessionId, String username) {
+        if (!isDbAvailable() || sessionId == null || username == null || username.isBlank()) return false;
+        try {
+            return sessionRepository.findBySessionId(sessionId)
+                    .map(session -> username.equals(session.getUsername()) || username.equals(session.getUserId()))
+                    .orElse(false);
+        } catch (Exception e) {
+            log.warn("Session owner check failed: {}", e.getMessage());
+            return false;
         }
     }
 }

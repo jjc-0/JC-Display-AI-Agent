@@ -14,6 +14,7 @@ import com.ecommerce.agent.repository.KnowledgeDocumentRepository;
 import com.ecommerce.agent.repository.ProductRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -62,7 +63,8 @@ public class AgentController {
     }
 
     @PostMapping("/chat")
-    public ResponseEntity<Map<String, Object>> chat(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> chat(@RequestBody Map<String, Object> body,
+                                                    Authentication authentication) {
         String sessionId = (String) body.getOrDefault("sessionId", null);
         String message = (String) body.getOrDefault("message", "");
         boolean enableTools = Boolean.TRUE.equals(body.get("enableTools"));
@@ -72,6 +74,8 @@ public class AgentController {
             .taskType("chat")
             .message(message)
             .enableTools(enableTools)
+            .userId(currentUsername(authentication))
+            .username(currentUsername(authentication))
             .build();
 
         AgentResponse response = agentRuntime.execute(request);
@@ -97,9 +101,10 @@ public class AgentController {
     }
 
     @PostMapping("/chat/tools")
-    public ResponseEntity<Map<String, Object>> chatWithTools(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> chatWithTools(@RequestBody Map<String, Object> body,
+                                                             Authentication authentication) {
         body.put("enableTools", true);
-        return chat(body);
+        return chat(body, authentication);
     }
 
     @GetMapping("/sessions")
@@ -552,5 +557,9 @@ public class AgentController {
                 || t.contains("seo") || t.contains("competitor"))       return "analysis";
         if (t.contains("image") || t.contains("识图") || t.contains("recognition")) return "image-recognition";
         return "chat";
+    }
+
+    private String currentUsername(Authentication authentication) {
+        return authentication != null ? authentication.getName() : "user";
     }
 }

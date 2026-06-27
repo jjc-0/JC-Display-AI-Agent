@@ -11,7 +11,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "conversation_messages", indexes = {
         @Index(name = "idx_msg_session_id", columnList = "sessionId"),
-        @Index(name = "idx_msg_created_at", columnList = "createdAt")
+        @Index(name = "idx_msg_created_at", columnList = "createdAt"),
+        @Index(name = "idx_msg_user_created", columnList = "userId, createdAt")
 })
 @Data
 @Builder
@@ -31,6 +32,12 @@ public class ConversationRecord {
 
     @Column(length = 30)
     private String operationType;
+
+    @Column(length = 64)
+    private String userId;
+
+    @Column(length = 80)
+    private String username;
 
     @Column(columnDefinition = "MEDIUMTEXT")
     private String content;
