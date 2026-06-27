@@ -58,6 +58,12 @@ public class AIConfig {
         private double minScore = 0.6;
         private String knowledgeBasePath = "classpath:/knowledge/";
         private boolean augmentPrompt = true;
+        private boolean indexProducts = true;
+        private int maxProductEmbeddings = 0;
+        private boolean persistEmbeddings = true;
+        private String embeddingIndexPath = "";
+        private String embeddingFingerprintPath = "";
+        private String embeddingManifestPath = "";
     }
 
     private Rag rag = new Rag();

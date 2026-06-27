@@ -25,6 +25,20 @@ spring:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
   h2:
     console:
       enabled: true
@@ -59,6 +73,12 @@ ai:
     min-score: 0.6
     knowledge-base-path: classpath:/knowledge/
     augment-prompt: true
+    index-products: true
+    max-product-embeddings: ${RAG_MAX_PRODUCT_EMBEDDINGS:0}
+    persist-embeddings: true
+    embedding-index-path: ${RAG_EMBEDDING_INDEX_PATH:}
+    embedding-fingerprint-path: ${RAG_EMBEDDING_FINGERPRINT_PATH:}
+    embedding-manifest-path: ${RAG_EMBEDDING_MANIFEST_PATH:}
 
 tools:
   search:

@@ -58,14 +58,17 @@ export default function ImageRecognition() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">AI 智能识图</h1>
-          <p className="mt-1 text-sm text-muted-foreground">AI 视觉识别 · 产品图片分析 · 多场景识别</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">VISION AGENT</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">AI 智能识图</h1>
+            <p className="mt-2 text-sm text-muted-foreground">AI 视觉识别，分析产品特征、材质、包装和适用外贸场景。</p>
+          </div>
+          <Badge variant="purple" className="text-[11px]">
+            <Camera size={11} /> Vision AI
+          </Badge>
         </div>
-        <Badge variant="purple" className="text-[11px]">
-          <Camera size={11} /> Vision AI
-        </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -90,7 +93,7 @@ export default function ImageRecognition() {
                 <img
                   src={preview}
                   alt="Preview"
-                  className="w-full rounded-[16px] object-contain max-h-[300px] bg-muted"
+                  className="w-full rounded-[8px] object-contain max-h-[300px] bg-muted"
                 />
                 <button
                   onClick={clearImage}
@@ -102,7 +105,7 @@ export default function ImageRecognition() {
             ) : (
               <label
                 htmlFor="image-upload"
-                className="flex flex-col items-center justify-center py-16 rounded-[16px] border-2 border-dashed border-border hover:border-primary/40 hover:bg-accent/10 cursor-pointer transition-all"
+                className="flex flex-col items-center justify-center py-16 rounded-[8px] border-2 border-dashed border-border hover:border-primary/40 hover:bg-accent/10 cursor-pointer transition-all"
               >
                 <Upload size={40} className="text-muted-foreground/30 mb-3" />
                 <p className="text-sm text-muted-foreground">点击或拖拽上传图片</p>
@@ -138,7 +141,7 @@ export default function ImageRecognition() {
           </CardHeader>
           <CardContent>
             {result ? (
-              <div className="rounded-[14px] bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
+              <div className="trade-signal-card p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
                 {result}
               </div>
             ) : (

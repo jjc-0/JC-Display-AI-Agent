@@ -1,6 +1,7 @@
 package com.ecommerce.agent.controller;
 
 import com.ecommerce.agent.model.KnowledgeDocument;
+import com.ecommerce.agent.rag.KnowledgeBaseLoader;
 import com.ecommerce.agent.service.KnowledgeDocumentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ import java.util.*;
 public class DocumentUploadController {
 
     private final KnowledgeDocumentService docService;
+    private final KnowledgeBaseLoader knowledgeBaseLoader;
 
     /**
      * 上传文档（PDF/Word/TXT）
@@ -171,14 +173,16 @@ public class DocumentUploadController {
      */
     @PostMapping("/knowledge/rebuild-index")
     public ResponseEntity<Map<String, Object>> rebuildIndex() {
-        long start = System.currentTimeMillis();
-        docService.rebuildIndex();
-        long elapsed = System.currentTimeMillis() - start;
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "索引重建完成",
-                "durationMs", elapsed
-        ));
+        Map<String, Object> progress = knowledgeBaseLoader.startAsyncReload("manual");
+        Map<String, Object> result = new LinkedHashMap<>(progress);
+        result.put("success", true);
+        result.putIfAbsent("message", "索引更新已启动");
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/knowledge/rebuild-index/progress")
+    public ResponseEntity<Map<String, Object>> rebuildIndexProgress() {
+        return ResponseEntity.ok(knowledgeBaseLoader.getIndexProgress());
     }
 
     /**

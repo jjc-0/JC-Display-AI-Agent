@@ -9,10 +9,6 @@ import { Progress } from "@/components/ui/progress"
 import {
   Star,
   Loader2,
-  DollarSign,
-  TrendingUp,
-  Globe,
-  AlertTriangle,
   CheckCircle2,
   Send,
 } from "lucide-react"
@@ -61,31 +57,16 @@ export default function InquiryScoring() {
     }
   }
 
-  const demoScore = () => {
-    setCustomerName("John Smith")
-    setCustomerCountry("United States")
-    setInquiryText("Hi, I'm interested in your acrylic display stands for our retail stores. We need about 500 units per month. Can you provide FOB pricing and MOQ? We're looking for a long-term supplier partnership.")
-    setResult({
-      score: 87,
-      intent: "批量采购",
-      buyerStage: "决策阶段",
-      quantity: "500件/月",
-      urgency: "高",
-      reason: "该客户来自美国零售市场，有明确采购数量和长期合作意愿。询盘质量高，包含产品规格询问、价格谈判和长期合作意向。建议24小时内回复，提供阶梯报价。",
-      suggestedReply: "感谢您的询盘！我们Acrylic Display Stands非常适合零售场景。关于500件/月需求量，我们可以提供阶梯报价。FOB价格和MOQ请见附件产品目录。期待与您建立长期合作。",
-    })
-  }
-
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">询盘价值评分</h1>
-          <p className="mt-1 text-sm text-muted-foreground">AI 多维度智能评分 · 快速识别高价值询盘</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">INQUIRY SCORING</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">询盘价值评分</h1>
+            <p className="mt-2 text-sm text-muted-foreground">AI 多维度智能评分，快速识别高价值询盘、采购阶段和回复优先级。</p>
+          </div>
         </div>
-        <Button variant="outline" size="sm" onClick={demoScore}>
-          <Star size={14} /> 演示数据
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -142,7 +123,7 @@ export default function InquiryScoring() {
               <div className="space-y-5">
                 {/* Score */}
                 <div className="text-center">
-                  <div className="inline-flex items-center gap-2 px-5 py-3 rounded-[16px] bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-100">
+                  <div className="trade-signal-card inline-flex items-center gap-2 px-5 py-3">
                     <span className="text-4xl font-extrabold text-primary">{result.score}</span>
                     <span className="text-sm text-muted-foreground">/100</span>
                   </div>
@@ -188,7 +169,7 @@ export default function InquiryScoring() {
 
                 {/* Suggested Reply */}
                 {result.suggestedReply && (
-                  <div className="p-4 rounded-[14px] bg-accent/50 border border-accent">
+                  <div className="trade-signal-card p-4">
                     <p className="text-xs font-semibold mb-1 flex items-center gap-1">
                       <Send size={13} className="text-primary" /> 回复建议
                     </p>
@@ -200,7 +181,7 @@ export default function InquiryScoring() {
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Star size={48} className="mb-4 opacity-20" />
                 <p className="text-sm">输入询盘内容后开始评分</p>
-                <p className="text-xs mt-1">或点击「演示数据」查看示例</p>
+                <p className="text-xs mt-1">评分结果来自后端模型接口</p>
               </div>
             )}
           </CardContent>

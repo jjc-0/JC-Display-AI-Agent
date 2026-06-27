@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+﻿import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -41,8 +41,8 @@ const agentDefs: AgentDef[] = [
     description: "基于产品知识库，自动回答客户询盘与产品咨询，支持多轮对话与上下文理解。",
     icon: <MessageSquare size={22} />,
     category: "对话",
-    color: "bg-violet-100 text-violet-600",
-    gradient: "from-violet-500 to-purple-600",
+    color: "bg-[#E9F7F5] text-[#087C78]",
+    gradient: "from-[#0A8BC4] to-[#0B918C]",
     route: "/agent-chat",
     typeKey: "chat",
   },
@@ -52,8 +52,8 @@ const agentDefs: AgentDef[] = [
     description: "多维度智能评分引擎，快速识别高价值询盘，提升销售团队响应效率。",
     icon: <Star size={22} />,
     category: "分析",
-    color: "bg-blue-100 text-blue-600",
-    gradient: "from-blue-500 to-cyan-600",
+    color: "bg-[#EEF7F3] text-[#1F5F53]",
+    gradient: "from-[#0A8BC4] to-[#2D9D72]",
     route: "/inquiry",
     typeKey: "inquiry",
   },
@@ -64,7 +64,7 @@ const agentDefs: AgentDef[] = [
     icon: <PenTool size={22} />,
     category: "创作",
     color: "bg-emerald-100 text-emerald-600",
-    gradient: "from-emerald-500 to-teal-600",
+    gradient: "from-[#2D9D72] to-[#0B918C]",
     route: "/copywriting",
     typeKey: "copywriting",
   },
@@ -75,7 +75,7 @@ const agentDefs: AgentDef[] = [
     icon: <Globe size={22} />,
     category: "翻译",
     color: "bg-amber-100 text-amber-600",
-    gradient: "from-amber-500 to-orange-600",
+    gradient: "from-[#D89A2B] to-[#2D9D72]",
     route: "/translate",
     typeKey: "translate",
   },
@@ -85,8 +85,8 @@ const agentDefs: AgentDef[] = [
     description: "多模态模型驱动，识别产品图片、竞品包装、生产工艺等多场景图像。",
     icon: <ImageIcon size={22} />,
     category: "视觉",
-    color: "bg-pink-100 text-pink-600",
-    gradient: "from-pink-500 to-rose-600",
+    color: "bg-[#EEF5F1] text-[#273832]",
+    gradient: "from-[#17211F] to-[#0A8BC4]",
     route: "/image-recognition",
     typeKey: "image-recognition",
   },
@@ -96,8 +96,8 @@ const agentDefs: AgentDef[] = [
     description: "实时追踪行业趋势、竞品动态、价格波动，生成专业市场分析报告。",
     icon: <BarChart3 size={22} />,
     category: "分析",
-    color: "bg-indigo-100 text-indigo-600",
-    gradient: "from-indigo-500 to-blue-600",
+    color: "bg-[#F4F6F5] text-[#74766F]",
+    gradient: "from-[#0A8BC4] to-[#17211F]",
     route: "/analysis",
     typeKey: "analysis",
   },
@@ -149,10 +149,9 @@ export default function AgentSquare() {
     const stats = agentStats?.agents?.[def.typeKey]
     const sessionCount = stats?.sessionCount ?? 0
     const totalSessions = agentStats?.totalSessions ?? 0
-    // 加权评分：基于该类型会话占比 (3-5 分区间)
     const ratio = totalSessions > 0 ? sessionCount / totalSessions : 0
-    const rating = Math.round((3 + ratio * 2) * 10) / 10
-    return { ...def, tasks: sessionCount, rating: rating || 4.0 }
+    const share = Math.round(ratio * 1000) / 10
+    return { ...def, tasks: sessionCount, share }
   })
 
   const filteredAgents = agents.filter((agent) => {
@@ -174,31 +173,43 @@ export default function AgentSquare() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">智能体广场</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            选择 AI Agent 开始对话 · 自动化你的业务
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="page-kicker">GLOBAL TRADE AGENTS</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">智能体广场</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              选择 AI Agent 开始对话，把询盘、翻译、视觉识别和市场分析组织成可复用的外贸工作台。
             {agentStats && (
               <span className="ml-2 text-[11px] text-muted-foreground/60">
                 共 {agentStats.totalSessions} 个会话
               </span>
             )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => fetchStats()} disabled={loading}>
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          </Button>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="搜索 Agent..."
-              className="pl-9 w-full sm:w-[260px]"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="trade-chip">EXPORT READY</span>
+              <span className="trade-chip">SECURE</span>
+              <span className="trade-chip">RECYCLABLE</span>
+            </div>
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[320px]">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => fetchStats()} disabled={loading}>
+                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              </Button>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="搜索 Agent..."
+                  className="pl-9 w-full"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="trade-signal-card px-3 py-2 text-[11px] text-muted-foreground">
+              AI routing keeps trade tasks, product facts, and customer context aligned.
+            </div>
           </div>
         </div>
       </div>
@@ -218,7 +229,7 @@ export default function AgentSquare() {
             key={cat}
             onClick={() => setActiveCategory(cat)}
             className={cn(
-              "px-4 py-1.5 rounded-[10px] text-sm font-medium transition-all duration-200",
+              "px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all duration-200",
               activeCategory === cat
                 ? "bg-accent text-accent-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -235,7 +246,7 @@ export default function AgentSquare() {
           <Card
             key={agent.id}
             className={cn(
-              "group cursor-pointer hover:border-primary/30 transition-all duration-300",
+              "group cursor-pointer hover:-translate-y-0.5 hover:border-[#BFD8CE] transition-all duration-300",
               "animate-fade-in-up",
               i === 0 ? "stagger-1" : i === 1 ? "stagger-2" : i === 2 ? "stagger-3" : i === 3 ? "stagger-4" : i === 4 ? "stagger-5" : "stagger-6"
             )}
@@ -243,12 +254,11 @@ export default function AgentSquare() {
           >
             <CardHeader>
               <div className="flex items-start justify-between">
-                <div className={`w-11 h-11 rounded-[14px] bg-gradient-to-br ${agent.gradient} flex items-center justify-center text-white shadow-lg`}>
+                <div className={`ai-orbit w-11 h-11 rounded-[8px] bg-gradient-to-br ${agent.gradient} flex items-center justify-center text-white shadow-[0_22px_42px_-30px_rgba(23,33,31,0.6)]`}>
                   {agent.icon}
                 </div>
-                <div className="flex items-center gap-1 text-amber-500">
-                  <Star size={13} fill="currentColor" />
-                  <span className="text-xs font-semibold">{agent.rating}</span>
+                <div className="rounded-full border border-[#E4E8E5] bg-[#F8FBFA] px-2 py-1 text-[11px] font-black text-[#74766F]">
+                  {agent.share}%
                 </div>
               </div>
               <CardTitle className="mt-3 text-base group-hover:text-primary transition-colors">

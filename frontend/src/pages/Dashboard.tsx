@@ -1,30 +1,18 @@
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Database,
-  FileText,
-  MessageSquare,
-  TrendingUp,
-  RefreshCw,
-  Clock,
-  Loader2,
+  ArrowUpRight,
   BarChart3,
-  Coins,
-  Zap,
+  BookOpenText,
+  CreditCard,
+  Database,
+  Gauge,
+  MessageSquare,
+  PackageSearch,
+  RefreshCw,
+  Timer,
 } from "lucide-react"
-import {
-  BarChart,
-  Bar,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts"
 import api from "@/lib/api"
 
 interface Stats {
@@ -42,42 +30,25 @@ interface Session {
   updatedAt: string
 }
 
-interface TokenStats {
+interface RecentCall {
+  id?: number
+  time: string
+  model: string
+  role: string
+  operationType?: string
+  latency?: number | null
+}
+
+interface UsageStats {
   totalCalls: number
   todayCalls: number
+  avgLatencyMs?: number | null
   modelBreakdown: Record<string, number>
+  recentCalls: RecentCall[]
   balance: { totalBalance: number; currency: string; isAvailable: boolean }
 }
 
-/** 每种 Agent 类型固定一种颜色 */
-const AGENT_COLORS: Record<string, string> = {
-  chat: "#7C3AED",
-  inquiry: "#3B82F6",
-  knowledge: "#10B981",
-  copywriting: "#F59E0B",
-  translate: "#EC4899",
-  analysis: "#6366F1",
-  "image-recognition": "#8B5CF6",
-  auth: "#14B8A6",
-}
-const FALLBACK_COLOR = "#94A3B8"
-
-/** 模型官方品牌色 */
-const MODEL_COLORS: Record<string, string> = {
-  "deepseek-chat": "#4D6BFE",
-  "deepseek-reasoner": "#4D6BFE",
-  deepseek: "#4D6BFE",
-  "gpt-4o": "#10A37F",
-  "gpt-4": "#10A37F",
-  "gpt-4-turbo": "#10A37F",
-  "gpt-3.5-turbo": "#10A37F",
-  openai: "#10A37F",
-  "claude-3": "#D97706",
-  "claude-3.5": "#D97706",
-  claude: "#D97706",
-  "demo-mode": "#94A3B8",
-  unknown: "#94A3B8",
-}
+const MODEL_COLORS = ["#2F6B5F", "#0B918C", "#516B63", "#93A9B8", "#A8ABA2"]
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats>({
@@ -88,11 +59,12 @@ export default function Dashboard() {
   })
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
-  const [sessionTypeChart, setSessionTypeChart] = useState<{ name: string; count: number }[]>([])
-  const [tokenStats, setTokenStats] = useState<TokenStats>({
+  const [usage, setUsage] = useState<UsageStats>({
     totalCalls: 0,
     todayCalls: 0,
+    avgLatencyMs: null,
     modelBreakdown: {},
+    recentCalls: [],
     balance: { totalBalance: 0, currency: "CNY", isAvailable: false },
   })
 
@@ -102,8 +74,7 @@ export default function Dashboard() {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
-    const { signal } = controller
-    loadAll(signal)
+    loadAll(controller.signal)
     return () => controller.abort()
   }, [])
 
@@ -120,12 +91,12 @@ export default function Dashboard() {
 
       if (statusRes.status === "fulfilled") {
         const s = statusRes.value.data
-        setStats({
+        setStats((prev) => ({
+          ...prev,
           productCount: s.productCount ?? 0,
           docCount: s.knowledgeDocumentCount ?? 0,
-          sessionCount: stats.sessionCount,
-          ragEnabled: s.enabled ?? false,
-        })
+          ragEnabled: Boolean(s.enabled),
+        }))
       }
 
       if (sessionsRes.status === "fulfilled") {
@@ -133,50 +104,101 @@ export default function Dashboard() {
         const sessionList: Session[] = Array.isArray(data?.sessions)
           ? data.sessions
           : Array.isArray(data) ? data : []
-
         setSessions(sessionList.slice(0, 50))
         setStats((prev) => ({ ...prev, sessionCount: sessionList.length }))
-
-        const typeMap: Record<string, number> = {}
-        for (const sess of sessionList) {
-          const t = sess.type || "agent"
-          typeMap[t] = (typeMap[t] || 0) + 1
-        }
-        setSessionTypeChart(
-          Object.entries(typeMap)
-            .sort((a, b) => b[1] - a[1])
-            .map(([name, count]) => ({ name, count }))
-        )
       }
 
       if (usageRes.status === "fulfilled") {
         const d = usageRes.value.data
-        setTokenStats({
+        setUsage({
           totalCalls: d.usage?.totalCalls ?? 0,
           todayCalls: d.usage?.todayCalls ?? 0,
+          avgLatencyMs: d.usage?.avgLatencyMs ?? null,
           modelBreakdown: d.usage?.modelBreakdown ?? {},
+          recentCalls: Array.isArray(d.recentCalls) ? d.recentCalls : [],
           balance: {
             totalBalance: d.balance?.totalBalance ?? 0,
             currency: d.balance?.currency ?? "CNY",
-            isAvailable: d.balance?.isAvailable ?? false,
+            isAvailable: Boolean(d.balance?.isAvailable),
           },
         })
       }
-    } catch {}
-    setLoading(false)
+    } catch {
+      // 单个接口失败不阻塞仪表盘，其余接口会通过 Promise.allSettled 正常展示。
+    } finally {
+      if (!signal?.aborted) setLoading(false)
+    }
   }
 
-  const tokenChart = Object.entries(tokenStats.modelBreakdown)
+  const modelChart = Object.entries(usage.modelBreakdown)
+    .reduce<Record<string, number>>((acc, [, count]) => {
+      acc["JC agent"] = (acc["JC agent"] || 0) + count
+      return acc
+    }, {})
+
+  const modelRows = Object.entries(modelChart)
     .sort((a, b) => b[1] - a[1])
     .map(([name, count]) => ({ name, count }))
 
+  const totalModelCalls = modelRows.reduce((sum, item) => sum + item.count, 0)
+  const balanceText = usage.balance.isAvailable
+    ? `${currencyPrefix(usage.balance.currency)}${usage.balance.totalBalance.toFixed(2)}`
+    : "未配置"
+
+  const metricCards = [
+    { label: "账户余额", hint: "来自模型服务商余额接口", value: balanceText, icon: CreditCard, tone: "gold" },
+    { label: "今日请求", hint: "今日写入数据库的调用记录", value: usage.todayCalls.toLocaleString(), icon: ArrowUpRight, tone: "green" },
+    { label: "累计请求", hint: "conversation_messages 记录总数", value: usage.totalCalls.toLocaleString(), icon: BarChart3, tone: "slate" },
+    { label: "平均延迟", hint: "按已记录处理耗时计算", value: formatLatency(usage.avgLatencyMs), icon: Timer, tone: "slate" },
+    { label: "产品数量", hint: "RAG 产品库真实商品数", value: stats.productCount.toLocaleString(), icon: PackageSearch, tone: "green" },
+    { label: "知识文档", hint: "已纳入知识库的文档数", value: stats.docCount.toLocaleString(), icon: BookOpenText, tone: "slate" },
+    { label: "会话数量", hint: "当前系统记录的会话数", value: stats.sessionCount.toLocaleString(), icon: MessageSquare, tone: "slate" },
+    { label: "RAG 状态", hint: "知识检索服务开关状态", value: stats.ragEnabled ? "启用" : "未启用", icon: Gauge, tone: stats.ragEnabled ? "green" : "gold" },
+  ]
+
   return (
-    <div className="flex flex-col gap-4 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-3 animate-fade-in">
+      <div className="console-hero">
+        <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-4">
+          <div className="text-[10px] font-black uppercase tracking-[0.08em] text-[#74766F]">CONSOLE</div>
+          <h1 className="mt-1 text-[28px] font-black leading-none tracking-tight text-[#171916]">Developer</h1>
+          <p className="mt-2 text-[12px] font-medium text-[#74766F]">只展示已接入后端或数据库可验证的数据。</p>
+        </div>
+        <div className="console-hero-stat">
+          <span>今日请求</span>
+          <strong>{usage.todayCalls.toLocaleString()}</strong>
+          <small>累计 {usage.totalCalls.toLocaleString()} 次</small>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {metricCards.map((stat, i) => (
+          <Card key={stat.label} className={`console-metric-card console-metric-card--${stat.tone} animate-fade-in-up stagger-${(i % 6) + 1}`}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-black text-[#171916]">{stat.label}</p>
+                  <p className="mt-1 text-[11px] font-medium text-[#74766F]">{stat.hint}</p>
+                </div>
+                <div className="console-metric-icon">
+                  <stat.icon size={15} />
+                </div>
+              </div>
+              {loading ? (
+                <div className="mt-4 h-8 w-24 rounded-[8px] bg-[#F4F6F5] animate-pulse" />
+              ) : (
+                <p className="mt-4 font-mono text-[30px] font-black leading-none tracking-tight text-[#171916]">{stat.value}</p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="console-section-bar">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">数据驾驶舱</h1>
-          <p className="mt-1 text-sm text-muted-foreground">AI Agent 平台运营数据总览</p>
+          <div className="text-[10px] font-black uppercase tracking-[0.08em] text-[#74766F]">REAL DATA</div>
+          <h2 className="text-[17px] font-black leading-tight text-[#171916]">调用与知识库概览</h2>
+          <p className="text-[12px] text-[#74766F]">已移除无真实来源的费用、Token 趋势和本地演示数值。</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => loadAll()} disabled={loading}>
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
@@ -184,232 +206,172 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          {
-            label: "知识库产品",
-            value: loading ? "—" : stats.productCount.toLocaleString(),
-            icon: Database,
-            color: "bg-violet-100 text-violet-600",
-            source: "MySQL",
-          },
-          {
-            label: "知识文档",
-            value: loading ? "—" : stats.docCount.toLocaleString(),
-            icon: FileText,
-            color: "bg-blue-100 text-blue-600",
-            source: "MySQL",
-          },
-          {
-            label: "API 调用次数",
-            value: loading ? "—" : tokenStats.totalCalls.toLocaleString(),
-            icon: Zap,
-            color: "bg-emerald-100 text-emerald-600",
-            source: "今日 " + (loading ? "—" : tokenStats.todayCalls.toLocaleString()) + " 次",
-          },
-          {
-            label: "DeepSeek 余额",
-            value: loading ? "—" : `¥${tokenStats.balance.isAvailable ? tokenStats.balance.totalBalance.toFixed(2) : "—"}`,
-            icon: Coins,
-            color: "bg-amber-100 text-amber-600",
-            source: tokenStats.balance.isAvailable ? "实时余额" : "未配置 API Key",
-          },
-        ].map((stat, i) => (
-          <Card key={stat.label} className={`animate-fade-in-up stagger-${i + 1}`}>
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between">
-                <div className="space-y-2 min-w-0">
-                  <p className="text-xs text-muted-foreground font-medium">{stat.label}</p>
-                  {loading ? (
-                    <div className="h-8 w-20 bg-muted rounded-[8px] animate-pulse" />
-                  ) : (
-                    <p className="text-2xl font-bold tracking-tight truncate">{stat.value}</p>
-                  )}
-                  <p className="text-[10px] text-muted-foreground">{stat.source}</p>
-                </div>
-                <div className={`w-10 h-10 rounded-[14px] ${stat.color} flex items-center justify-center flex-shrink-0`}>
-                  <stat.icon size={20} />
-                </div>
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-[#E4E8E5] pb-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.08em] text-[#74766F]">Traffic</p>
+                <CardTitle>最近调用</CardTitle>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Main content — two cards + remaining fills screen */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left column: Agents distribution (short) + Token usage (fills rest) */}
-        <div className="flex flex-col gap-4 min-h-0">
-          {/* Agents 会话分布 — short, fixed height */}
-          <Card className="flex-shrink-0 animate-fade-in-up overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Agents 会话分布</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center h-[180px]">
-                  <Loader2 size={24} className="animate-spin text-muted-foreground" />
-                </div>
-              ) : sessionTypeChart.length > 0 ? (
-                <>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <BarChart data={sessionTypeChart} margin={{ top: 2, right: 4, left: -12, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#6E7280" }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#6E7280" }} allowDecimals={false} />
-                      <Tooltip contentStyle={{ borderRadius: "10px", border: "1px solid #EAECF0", fontSize: "12px" }} />
-                      <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={60}>
-                        {sessionTypeChart.map((entry) => (
-                          <Cell key={entry.name} fill={AGENT_COLORS[entry.name] || FALLBACK_COLOR} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-wrap gap-3 mt-2 justify-center">
-                    {sessionTypeChart.map((t) => (
-                      <div key={t.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: AGENT_COLORS[t.name] || FALLBACK_COLOR }} />
-                        {t.name} ({t.count})
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground h-[180px]">
-                  <BarChart3 size={32} className="mb-2 opacity-15" />
-                  <p className="text-xs">暂无会话数据</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Token / Model usage — fills remaining space */}
-          <Card className="flex-1 min-h-0 flex flex-col animate-fade-in-up overflow-hidden">
-            <CardHeader className="pb-2 flex-shrink-0">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Coins size={15} className="text-amber-500" />
-                Token 用量 · 模型分布
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 min-h-0 flex flex-col p-0">
-              {loading ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <Loader2 size={24} className="animate-spin text-muted-foreground" />
-                </div>
-              ) : tokenChart.length > 0 ? (
-                <>
-                  <div className="flex-1 min-h-0 px-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={tokenChart}
-                        layout="vertical"
-                        margin={{ top: 4, right: 16, left: -4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" horizontal={false} />
-                        <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6E7280" }} allowDecimals={false} />
-                        <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#6E7280" }} width={100} />
-                        <Tooltip
-                          contentStyle={{ borderRadius: "10px", border: "1px solid #EAECF0", fontSize: "12px" }}
-                          formatter={(value: number) => [`${value.toLocaleString()} 次调用`, "API 调用"]}
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{ fontSize: "10px", paddingTop: 8 }}
-                          formatter={(value) => <span style={{ color: "#6E7280" }}>{value}</span>}
-                        />
-                        <Bar dataKey="count" name="API Calls" radius={[0, 6, 6, 0]} maxBarSize={32}>
-                          {tokenChart.map((entry) => (
-                            <Cell key={entry.name} fill={MODEL_COLORS[entry.name] || FALLBACK_COLOR} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  {/* Summary row */}
-                  <div className="flex-shrink-0 px-4 pb-3 pt-1 flex items-center gap-4 text-[11px] text-muted-foreground border-t border-border mt-2 pt-3">
-                    <span>总调用: <strong className="text-foreground">{tokenStats.totalCalls.toLocaleString()}</strong></span>
-                    <span>今日: <strong className="text-foreground">{tokenStats.todayCalls.toLocaleString()}</strong></span>
-                    {tokenStats.balance.isAvailable && (
-                      <span className="ml-auto">
-                        余额: <strong className="text-emerald-600">{tokenStats.balance.totalBalance.toFixed(2)} {tokenStats.balance.currency}</strong>
-                      </span>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-                  <Coins size={36} className="mb-3 opacity-15" />
-                  <p className="text-xs">暂无 API 调用记录</p>
-                  <p className="text-[10px] mt-1">发送消息后模型用量将在此显示</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right column: Recent Sessions — fills full height */}
-        <Card className="flex flex-col animate-fade-in-up overflow-hidden">
-          <CardHeader className="pb-2 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Clock size={15} />
-                最近会话
-              </CardTitle>
-              <span className="text-[11px] text-muted-foreground">
-                {sessions.length > 0 ? `${sessions.length} 条` : ""}
-              </span>
+              <span className="text-[11px] font-bold text-[#74766F]">{usage.recentCalls.length} 条</span>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 min-h-0 p-0">
-            {loading ? (
-              <div className="h-full flex items-center justify-center">
-                <Loader2 size={24} className="animate-spin text-muted-foreground" />
-              </div>
-            ) : sessions.length > 0 ? (
-              <div className="h-full overflow-y-auto">
-                <div className="divide-y divide-border">
-                  {sessions.map((sess) => (
-                    <div
-                      key={sess.sessionId}
-                      className="flex items-center gap-3 px-5 py-3 hover:bg-muted/40 transition-colors"
-                    >
-                      <div
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: AGENT_COLORS[sess.type] || FALLBACK_COLOR }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {sess.title || `Session ${sess.sessionId?.slice(0, 8)}`}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal">
-                            {sess.type || "chat"}
-                          </Badge>
-                          {sess.modelUsed && (
-                            <span className="text-[10px] text-muted-foreground">{sess.modelUsed}</span>
-                          )}
-                        </div>
-                      </div>
-                      {sess.updatedAt && (
-                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                          {sess.updatedAt.slice(0, 10)}
-                        </span>
-                      )}
+          <CardContent className="p-0">
+            {usage.recentCalls.length > 0 ? (
+              <div className="divide-y divide-[#E4E8E5]">
+                {usage.recentCalls.slice(0, 8).map((call, i) => (
+                  <div key={call.id || `${call.time}-${i}`} className="grid grid-cols-[minmax(0,1fr)_100px_90px] items-center gap-3 px-4 py-3 text-[12px]">
+                    <div className="min-w-0">
+                      <p className="truncate font-black text-[#171916]">{call.operationType || call.role || "agent"}</p>
+                      <p className="text-[11px] text-[#74766F]">{formatTime(call.time)}</p>
                     </div>
-                  ))}
-                </div>
+                    <span className="text-right font-semibold text-[#74766F]">JC agent</span>
+                    <span className="text-right font-mono font-black text-[#171916]">{formatLatency(call.latency)}</span>
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                <MessageSquare size={36} className="mb-3 opacity-20" />
-                <p className="text-sm">暂无会话记录</p>
-                <p className="text-xs mt-1">去 AI Agent 对话页面发起对话</p>
+              <EmptyState icon={<MessageSquare size={28} />} title="暂无调用记录" text="当 Agent 产生对话或工具调用后，这里会显示数据库中的真实记录。" />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-[#E4E8E5] pb-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-[#74766F]">Agent Mix</p>
+                <CardTitle>调用占比</CardTitle>
               </div>
+              <span className="text-[11px] font-black text-[#171916]">{modelRows.length} 类</span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {modelRows.length > 0 ? (
+              <>
+                <div className="grid grid-cols-2 border-b border-[#E4E8E5] bg-[#F7F9F8]">
+                  <div className="border-r border-[#E4E8E5] px-4 py-3">
+                    <p className="text-[11px] text-[#74766F]">请求总量</p>
+                    <p className="font-mono text-[19px] font-black text-[#171916]">{totalModelCalls.toLocaleString()}</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-[11px] text-[#74766F]">当前标识</p>
+                    <p className="font-mono text-[19px] font-black text-[#171916]">JC agent</p>
+                  </div>
+                </div>
+                {modelRows.map((model, i) => {
+                  const percent = totalModelCalls > 0 ? Math.round(model.count / totalModelCalls * 1000) / 10 : 0
+                  return (
+                    <div key={model.name} className="border-b border-[#E4E8E5] px-4 py-3 last:border-b-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#D3DAD6] text-[10px] font-black text-[#74766F]">{String(i + 1).padStart(2, "0")}</span>
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-black text-[#171916]">{model.name}</p>
+                            <p className="text-[11px] text-[#74766F]">{model.count.toLocaleString()} 请求</p>
+                          </div>
+                        </div>
+                        <span className="font-mono text-[11px] font-black text-[#171916]">{percent}%</span>
+                      </div>
+                      <div className="console-progress mt-2">
+                        <span style={{ width: `${percent}%`, background: MODEL_COLORS[i % MODEL_COLORS.length] }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            ) : (
+              <EmptyState icon={<Database size={28} />} title="暂无占比数据" text="模型调用记录入库后会自动生成真实占比。" />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-[#E4E8E5] pb-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.08em] text-[#74766F]">RAG</p>
+              <CardTitle>知识库状态</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+            <StatusBlock label="产品库" value={`${stats.productCount.toLocaleString()} 个产品`} />
+            <StatusBlock label="文档库" value={`${stats.docCount.toLocaleString()} 份文档`} />
+            <StatusBlock label="检索状态" value={stats.ragEnabled ? "已启用" : "未启用"} />
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-[#E4E8E5] pb-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.08em] text-[#74766F]">Sessions</p>
+              <CardTitle>最近会话</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {sessions.length > 0 ? (
+              <div className="divide-y divide-[#E4E8E5]">
+                {sessions.slice(0, 5).map((session) => (
+                  <div key={session.sessionId} className="grid grid-cols-[minmax(0,1fr)_92px] gap-3 px-4 py-3 text-[12px]">
+                    <div className="min-w-0">
+                      <p className="truncate font-black text-[#171916]">{session.title || "未命名会话"}</p>
+                      <p className="text-[11px] text-[#74766F]">{session.type || "agent"}</p>
+                    </div>
+                    <span className="text-right text-[11px] text-[#74766F]">{formatTime(session.updatedAt)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={<MessageSquare size={28} />} title="暂无会话" text="新建对话后会在这里显示真实会话记录。" />
             )}
           </CardContent>
         </Card>
       </div>
     </div>
   )
+}
+
+function StatusBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[12px] border border-[#E4E8E5] bg-[#F8FBFA] p-4">
+      <p className="text-[11px] font-bold text-[#74766F]">{label}</p>
+      <p className="mt-2 font-mono text-[16px] font-black text-[#171916]">{value}</p>
+    </div>
+  )
+}
+
+function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-12 text-center text-[#74766F]">
+      <div className="mb-3 opacity-25">{icon}</div>
+      <p className="text-sm font-black text-[#171916]">{title}</p>
+      <p className="mt-2 max-w-[320px] text-xs leading-relaxed">{text}</p>
+    </div>
+  )
+}
+
+function currencyPrefix(currency: string) {
+  if (currency === "CNY") return "¥"
+  if (currency === "USD") return "$"
+  return `${currency} `
+}
+
+function formatLatency(value?: number | null) {
+  if (value == null) return "—"
+  if (value < 1000) return `${value}ms`
+  return `${(value / 1000).toFixed(2)}s`
+}
+
+function formatTime(value?: string) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
 }

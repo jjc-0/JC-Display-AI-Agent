@@ -61,14 +61,17 @@ export default function ApiIntegration() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">API 集成</h1>
-          <p className="mt-1 text-sm text-muted-foreground">开放 API 接口文档 · 对接你的系统</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">API CONNECTOR</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">API 集成</h1>
+            <p className="mt-2 text-sm text-muted-foreground">开放 API 接口文档，对接 ERP、官网、渠道和内部系统。</p>
+          </div>
+          <Badge variant="blue" className="text-[11px]">
+            <Server size={11} /> REST API
+          </Badge>
         </div>
-        <Badge variant="blue" className="text-[11px]">
-          <Server size={11} /> REST API
-        </Badge>
       </div>
 
       <Tabs defaultValue="docs">
@@ -87,7 +90,7 @@ export default function ApiIntegration() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-[10px] bg-muted/50 text-sm">
+                <div className="trade-signal-card flex items-center gap-2 mb-3 px-3 py-2 text-sm">
                   <Link size={14} className="text-muted-foreground" />
                   <span className="font-mono text-xs">Base URL: http://localhost:8088/api</span>
                   <Button
@@ -115,7 +118,7 @@ export default function ApiIntegration() {
                 </CardHeader>
                 <CardContent>
                   <div className="relative">
-                    <pre className="rounded-[12px] bg-muted p-4 text-xs font-mono overflow-x-auto">
+                    <pre className="rounded-[8px] bg-muted p-4 text-xs font-mono overflow-x-auto">
                       {ep.example}
                     </pre>
                     <Button
@@ -152,7 +155,7 @@ export default function ApiIntegration() {
                 <p className="text-[10px] text-muted-foreground">在请求头中携带: Authorization: Bearer {'<API_KEY>'}</p>
               </div>
 
-              <div className="p-4 rounded-[14px] bg-accent/50 border border-accent">
+              <div className="trade-signal-card p-4">
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <span className="font-semibold text-foreground">安全建议：</span>
                   API Key 请妥善保管，不要在客户端代码中暴露。

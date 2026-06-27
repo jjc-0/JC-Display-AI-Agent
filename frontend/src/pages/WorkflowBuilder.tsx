@@ -1,4 +1,4 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -41,7 +41,7 @@ const nodeTypes: Record<string, { nodes: WorkflowNode[] }> = {
       },
       {
         id: "t2", type: "trigger", label: "Webhook", description: "HTTP 事件驱动触发",
-        icon: <Globe size={16} />, color: "bg-blue-100 text-blue-600", borderColor: "border-blue-300",
+        icon: <Globe size={16} />, color: "bg-[#EEF7F3] text-[#1F5F53]", borderColor: "border-[#D7E8E0]",
       },
       {
         id: "t3", type: "trigger", label: "邮件触发", description: "收到新邮件时触发",
@@ -53,15 +53,15 @@ const nodeTypes: Record<string, { nodes: WorkflowNode[] }> = {
     nodes: [
       {
         id: "a1", type: "agent", label: "客服 Agent", description: "自动回复客户咨询",
-        icon: <Bot size={16} />, color: "bg-violet-100 text-violet-600", borderColor: "border-violet-300",
+        icon: <Bot size={16} />, color: "bg-[#E9F7F5] text-[#087C78]", borderColor: "border-[#BFE2DA]",
       },
       {
         id: "a2", type: "agent", label: "翻译 Agent", description: "多语言翻译处理",
-        icon: <Globe size={16} />, color: "bg-blue-100 text-blue-600", borderColor: "border-blue-300",
+        icon: <Globe size={16} />, color: "bg-[#EEF7F3] text-[#1F5F53]", borderColor: "border-[#D7E8E0]",
       },
       {
         id: "a3", type: "agent", label: "分析 Agent", description: "市场数据分析",
-        icon: <BarChart3 size={16} />, color: "bg-pink-100 text-pink-600", borderColor: "border-pink-300",
+        icon: <BarChart3 size={16} />, color: "bg-[#F4F6F5] text-[#343A35]", borderColor: "border-[#E4E8E5]",
       },
     ],
   },
@@ -69,15 +69,15 @@ const nodeTypes: Record<string, { nodes: WorkflowNode[] }> = {
     nodes: [
       {
         id: "to1", type: "tool", label: "知识库检索", description: "RAG 检索产品知识",
-        icon: <Database size={16} />, color: "bg-slate-100 text-slate-600", borderColor: "border-slate-300",
+        icon: <Database size={16} />, color: "bg-[#F4F6F5] text-[#74766F]", borderColor: "border-[#E4E8E5]",
       },
       {
         id: "to2", type: "tool", label: "SEO 分析", description: "关键词与排名分析",
-        icon: <BarChart3 size={16} />, color: "bg-teal-100 text-teal-600", borderColor: "border-teal-300",
+        icon: <BarChart3 size={16} />, color: "bg-[#EEF7F3] text-[#1F5F53]", borderColor: "border-[#D7E8E0]",
       },
       {
         id: "to3", type: "tool", label: "邮件发送", description: "自动发送回复邮件",
-        icon: <Mail size={16} />, color: "bg-indigo-100 text-indigo-600", borderColor: "border-indigo-300",
+        icon: <Mail size={16} />, color: "bg-[#E9F7F5] text-[#087C78]", borderColor: "border-[#BFE2DA]",
       },
     ],
   },
@@ -85,15 +85,15 @@ const nodeTypes: Record<string, { nodes: WorkflowNode[] }> = {
     nodes: [
       {
         id: "o1", type: "output", label: "邮件回复", description: "输出到邮件",
-        icon: <Mail size={16} />, color: "bg-green-100 text-green-600", borderColor: "border-green-300",
+        icon: <Mail size={16} />, color: "bg-[#EEF7F3] text-[#1F5F53]", borderColor: "border-[#D7E8E0]",
       },
       {
         id: "o2", type: "output", label: "数据报表", description: "导出分析报告",
-        icon: <FileText size={16} />, color: "bg-orange-100 text-orange-600", borderColor: "border-orange-300",
+        icon: <FileText size={16} />, color: "bg-amber-50 text-amber-700", borderColor: "border-amber-200",
       },
       {
         id: "o3", type: "output", label: "API 回调", description: "发送到外部 API",
-        icon: <Cog size={16} />, color: "bg-cyan-100 text-cyan-600", borderColor: "border-cyan-300",
+        icon: <Cog size={16} />, color: "bg-[#F4F6F5] text-[#74766F]", borderColor: "border-[#E4E8E5]",
       },
     ],
   },
@@ -146,15 +146,16 @@ export default function WorkflowBuilder() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Workflow Builder</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Trigger → Agent → Tool → Output · 拖拽编排自动化工作流
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="page-kicker">AI WORKFLOW ROUTING</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">Workflow Builder</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Trigger → Agent → Tool → Output，拖拽编排询盘、知识库和渠道动作。
+            </p>
+          </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={clearPipeline}>
             <X size={14} />
             清空
@@ -167,6 +168,7 @@ export default function WorkflowBuilder() {
             <Play size={14} />
             运行工作流
           </Button>
+        </div>
         </div>
       </div>
 
@@ -192,7 +194,7 @@ export default function WorkflowBuilder() {
                 {/* Drop Zone */}
                 <div
                   className={cn(
-                    "min-h-[120px] rounded-[16px] border-2 border-dashed p-3 transition-all duration-200 flex items-center justify-center",
+                    "min-h-[120px] rounded-[8px] border-2 border-dashed p-3 transition-all duration-200 flex items-center justify-center",
                     !stage.node
                       ? "border-border hover:border-primary/40 hover:bg-accent/20"
                       : "border-transparent",
@@ -214,7 +216,7 @@ export default function WorkflowBuilder() {
                   {stage.node ? (
                     <div
                       className={cn(
-                        "w-full rounded-[12px] border bg-card p-3 group/item relative",
+                        "w-full rounded-[8px] border bg-card p-3 group/item relative",
                         stage.node.borderColor
                       )}
                     >
@@ -225,7 +227,7 @@ export default function WorkflowBuilder() {
                         <X size={10} />
                       </button>
                       <div className="flex items-center gap-2.5">
-                        <div className={`w-8 h-8 rounded-[10px] ${stage.node.color} flex items-center justify-center`}>
+                        <div className={`ai-orbit w-8 h-8 rounded-[8px] ${stage.node.color} flex items-center justify-center`}>
                           {stage.node.icon}
                         </div>
                         <div className="min-w-0">
@@ -295,7 +297,7 @@ export default function WorkflowBuilder() {
                     handleDragStart(node)
                   }}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-2.5 rounded-[12px] border bg-card cursor-grab active:cursor-grabbing transition-all duration-200",
+                    "flex items-center gap-2.5 px-3 py-2.5 rounded-[8px] border bg-card cursor-grab active:cursor-grabbing transition-all duration-200",
                     "hover:shadow-sm hover:border-primary/30 hover:bg-accent/20",
                     "active:scale-[0.98] active:shadow-inner",
                     node.borderColor
@@ -317,7 +319,7 @@ export default function WorkflowBuilder() {
       </div>
 
       {/* Tips */}
-      <div className="flex items-center gap-3 px-4 py-3 rounded-[16px] bg-accent/50 border border-accent animate-fade-in-up">
+      <div className="trade-signal-card flex items-center gap-3 px-4 py-3 animate-fade-in-up">
         <CheckCircle2 size={16} className="text-primary flex-shrink-0" />
         <p className="text-xs text-muted-foreground">
           <span className="font-semibold text-foreground">操作提示：</span>

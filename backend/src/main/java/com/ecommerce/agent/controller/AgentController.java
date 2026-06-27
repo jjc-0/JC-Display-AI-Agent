@@ -233,23 +233,14 @@ public class AgentController {
     public ResponseEntity<Map<String, Object>> searchKnowledge(@RequestBody Map<String, Object> body) {
         String query = (String) body.getOrDefault("query", "");
         int maxResults = body.containsKey("maxResults") ? ((Number) body.get("maxResults")).intValue() : 5;
-        String context = ragService.retrieveContext(query, maxResults);
-        if (context == null || context.isBlank()) {
-            return ResponseEntity.ok(Map.of(
-                "query", query,
-                "results", List.of(),
-                "totalFound", 0
-            ));
-        }
-        String[] segments = context.split("\n\n---\n\n");
-        List<Map<String, Object>> results = new ArrayList<>();
-        for (String seg : segments) {
-            results.add(Map.of("snippet", seg.substring(0, Math.min(200, seg.length())) + "...", "fullText", seg));
-        }
+        RAGService.RAGContext ragContext = ragService.buildContext(query, Math.max(1, Math.min(10, maxResults)));
+        List<Map<String, Object>> results = ragContext.citations();
         return ResponseEntity.ok(Map.of(
             "query", query,
             "results", results,
-            "totalFound", results.size()
+            "context", ragContext.context() != null ? ragContext.context() : "",
+            "totalFound", results.size(),
+            "ragUsed", ragContext.hasContext()
         ));
     }
 
@@ -258,15 +249,22 @@ public class AgentController {
         boolean available = ragService.isAvailable();
         long docCount = knowledgeDocRepo.count();
         long productCount = productRepo.count();
-        return ResponseEntity.ok(Map.of(
-            "enabled", available,
-            "storeType", "MySQL（持久化存储）",
-            "knowledgeDocumentCount", docCount,
-            "productCount", productCount,
-            "dataSource", "MySQL → knowledge_documents + products 表",
-            "topics", knowledgeDocRepo.findByEnabledTrueOrderByTitleAsc()
-                    .stream().map(KnowledgeDocument::getTitle).collect(Collectors.toList())
-        ));
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("enabled", available);
+        status.put("storeType", "MySQL（持久化存储）");
+        status.put("knowledgeDocumentCount", docCount);
+        status.put("productCount", productCount);
+        status.put("dataSource", "MySQL → knowledge_documents + products 表");
+        status.put("autoInject", aiConfig.getRag().isAugmentPrompt());
+        status.put("retrievalMode", aiConfig.getRag().isIndexProducts()
+                ? "知识文档 + 产品库向量检索，中文查询扩展，中英关键词兜底"
+                : "知识文档向量检索 + MySQL 关键词兜底");
+        status.put("productVectorIndexEnabled", aiConfig.getRag().isIndexProducts());
+        status.put("maxProductEmbeddings", aiConfig.getRag().getMaxProductEmbeddings());
+        status.put("productEmbeddingScope", aiConfig.getRag().getMaxProductEmbeddings() == 0 ? "all" : "limited");
+        status.put("topics", knowledgeDocRepo.findByEnabledTrueOrderByTitleAsc()
+                .stream().map(KnowledgeDocument::getTitle).collect(Collectors.toList()));
+        return ResponseEntity.ok(status);
     }
 
     /**
@@ -334,11 +332,16 @@ public class AgentController {
      */
     @PostMapping("/knowledge/reload")
     public ResponseEntity<Map<String, Object>> reloadKnowledge() {
-        knowledgeBaseLoader.forceReload();
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "message", "已从 MySQL 重新加载知识库到向量存储"
-        ));
+        Map<String, Object> progress = knowledgeBaseLoader.startAsyncReload("manual");
+        Map<String, Object> result = new LinkedHashMap<>(progress);
+        result.put("success", true);
+        result.putIfAbsent("message", "索引更新已启动");
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/knowledge/index-progress")
+    public ResponseEntity<Map<String, Object>> indexProgress() {
+        return ResponseEntity.ok(knowledgeBaseLoader.getIndexProgress());
     }
 
     /**

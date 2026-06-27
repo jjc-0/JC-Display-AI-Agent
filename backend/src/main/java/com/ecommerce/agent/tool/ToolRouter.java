@@ -96,6 +96,11 @@ public class ToolRouter {
                     .get(tool.getTimeoutMs(), TimeUnit.MILLISECONDS);
 
             long duration = System.currentTimeMillis() - start;
+            if (isBusinessFailure(result)) {
+                log.warn("工具业务执行失败: {} result={}", toolName, result);
+                return new ToolCallResult(toolName, args, result, false, result, duration);
+            }
+
             log.info("工具执行成功: {} ({}ms), result={} chars",
                     toolName, duration,
                     result != null ? result.length() : 0);
@@ -110,6 +115,17 @@ public class ToolRouter {
             log.error("工具执行失败: {}", toolName, e);
             return new ToolCallResult(toolName, args, e.getMessage(), false,
                     "Execution error: " + e.getMessage(), System.currentTimeMillis() - start);
+        }
+    }
+
+    private boolean isBusinessFailure(String result) {
+        if (result == null || result.isBlank()) return false;
+        try {
+            JsonNode node = objectMapper.readTree(result);
+            return node.path("business_error").asBoolean(false)
+                    || (node.has("success") && !node.path("success").asBoolean(true) && node.has("error"));
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

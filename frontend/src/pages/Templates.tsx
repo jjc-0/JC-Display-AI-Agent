@@ -119,14 +119,17 @@ export default function Templates() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Prompt 模板管理</h1>
-          <p className="mt-1 text-sm text-muted-foreground">管理 AI 提示词模板 · 可复用 · 可协作</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">PROMPT OPERATIONS</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">Prompt 模板管理</h1>
+            <p className="mt-2 text-sm text-muted-foreground">管理 AI 提示词模板，让外贸回复、文案和分析流程可复用、可协作。</p>
+          </div>
+          <Button variant="gradient" size="sm" onClick={resetForm}>
+            <Plus size={14} /> 新建模板
+          </Button>
         </div>
-        <Button variant="gradient" size="sm" onClick={resetForm}>
-          <Plus size={14} /> 新建模板
-        </Button>
       </div>
 
       <Tabs defaultValue="list">

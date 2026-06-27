@@ -46,7 +46,10 @@ public class WeChatControlTool implements Tool {
 
     @Override
     public String getDescription() {
-        return "微信控制工具。主动向微信用户发送消息、查询活跃用户列表。" +
+        return "JC claw 微信控制工具。主动向微信用户发送消息、查询活跃用户列表。" +
+               "用户说“发给某个微信用户/客户/联系人”时先 list_users 或使用 to_user_keyword 匹配联系人，再 send_message。" +
+               "文件传输助手是系统联系人，可直接使用 to_user_keyword=文件传输助手 或 to_user_id=filehelper。" +
+               "注意：本工具不能读取完整微信通讯录，只能发送给文件传输助手或已和 JC claw 产生过会话的活跃用户。" +
                "典型用法: 发促销信息、售后跟进、广播通知、查看微信用户活跃度。" +
                "枚举 action: send_message / list_users";
     }
@@ -67,6 +70,11 @@ public class WeChatControlTool implements Tool {
         userIdProp.put("type", "string");
         userIdProp.put("description", "目标用户ID (仅 send_message)");
         props.put("to_user_id", userIdProp);
+
+        Map<String, Object> keywordProp = new LinkedHashMap<>();
+        keywordProp.put("type", "string");
+        keywordProp.put("description", "目标用户关键词、昵称、备注或部分ID。用户没有提供精确 to_user_id 时使用。");
+        props.put("to_user_keyword", keywordProp);
 
         Map<String, Object> textProp = new LinkedHashMap<>();
         textProp.put("type", "string");
@@ -106,7 +114,17 @@ public class WeChatControlTool implements Tool {
 
         String toUserId = (String) params.get("to_user_id");
         if (toUserId == null || toUserId.isBlank()) {
-            return "{\"error\": \"缺少 to_user_id 参数\"}";
+            String keyword = (String) params.get("to_user_keyword");
+            if (keyword != null && !keyword.isBlank()) {
+                Optional<Map<String, Object>> matched = weChatBot.findUser(keyword);
+                if (matched.isPresent()) {
+                    toUserId = String.valueOf(matched.get().get("user_id"));
+                } else {
+                    return usersRequired("未找到匹配的微信用户: " + keyword);
+                }
+            } else {
+                return usersRequired("缺少 to_user_id 或 to_user_keyword 参数");
+            }
         }
 
         String text = (String) params.get("text");
@@ -114,17 +132,24 @@ public class WeChatControlTool implements Tool {
             return "{\"error\": \"缺少 text 消息内容\"}";
         }
 
-        boolean ok = weChatBot.sendMessage(toUserId, text);
+        WeChatBotService.SendResult sendResult = weChatBot.sendMessageDetailed(toUserId, text);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("success", ok);
+        result.put("success", sendResult.success());
         result.put("to_user_id", toUserId);
         result.put("text", text.length() > 100 ? text.substring(0, 100) + "..." : text);
+        if (sendResult.error() != null) {
+            result.put("error", sendResult.error());
+        }
+        result.put("raw_response", sendResult.rawResponse());
 
         try {
+            if (!sendResult.success()) {
+                result.put("business_error", true);
+            }
             return objectMapper.writeValueAsString(result);
         } catch (Exception e) {
-            return "{\"success\":" + ok + "}";
+            return "{\"success\":" + sendResult.success() + "}";
         }
     }
 
@@ -149,6 +174,18 @@ public class WeChatControlTool implements Tool {
             return objectMapper.writeValueAsString(result);
         } catch (Exception e) {
             return "{\"total\":" + users.size() + "}";
+        }
+    }
+
+    private String usersRequired(String message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("error", message);
+        result.put("hint", "请先从 users 中选择目标用户，或提供更准确的微信昵称/备注/用户ID。");
+        result.put("users", weChatBot.getActiveUsers());
+        try {
+            return objectMapper.writeValueAsString(result);
+        } catch (Exception e) {
+            return "{\"error\":\"" + message + "\"}";
         }
     }
 }

@@ -73,14 +73,17 @@ export default function Translate() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">多语言翻译</h1>
-          <p className="mt-1 text-sm text-muted-foreground">高精度 AI 翻译 · 20+ 语种 · 电商术语保留</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">LOCALIZATION AGENT</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">多语言翻译</h1>
+            <p className="mt-2 text-sm text-muted-foreground">高精度 AI 翻译，保留电商术语、产品参数和外贸表达习惯。</p>
+          </div>
+          <Badge variant="blue" className="text-[11px]">
+            <Globe size={11} /> 20+ Languages
+          </Badge>
         </div>
-        <Badge variant="blue" className="text-[11px]">
-          <Globe size={11} /> 20+ Languages
-        </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -153,7 +156,7 @@ export default function Translate() {
           </CardHeader>
           <CardContent>
             {result ? (
-              <div className="rounded-[14px] bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[260px]">
+              <div className="trade-signal-card p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[260px]">
                 {result}
               </div>
             ) : (

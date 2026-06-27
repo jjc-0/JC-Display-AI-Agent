@@ -80,14 +80,17 @@ export default function Analysis() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">市场分析</h1>
-          <p className="mt-1 text-sm text-muted-foreground">市场机会 · SEO审计 · 竞品分析</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">MARKET SIGNALS</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">市场分析</h1>
+            <p className="mt-2 text-sm text-muted-foreground">市场机会、SEO 审计与竞品情报，帮助外贸团队快速判断下一步动作。</p>
+          </div>
+          <Badge variant="purple" className="text-[11px]">
+            <BarChart3 size={11} /> AI 分析引擎
+          </Badge>
         </div>
-        <Badge variant="purple" className="text-[11px]">
-          <BarChart3 size={11} /> AI 分析引擎
-        </Badge>
       </div>
 
       <Tabs defaultValue="market" className="w-full">
@@ -142,7 +145,7 @@ export default function Analysis() {
               <CardHeader><CardTitle className="text-base">分析报告</CardTitle></CardHeader>
               <CardContent>
                 {marketResult ? (
-                  <div className="rounded-[14px] bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
+                  <div className="trade-signal-card p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
                     {marketResult}
                   </div>
                 ) : (
@@ -182,7 +185,7 @@ export default function Analysis() {
               <CardHeader><CardTitle className="text-base">审计结果</CardTitle></CardHeader>
               <CardContent>
                 {seoResult ? (
-                  <div className="rounded-[14px] bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
+                  <div className="trade-signal-card p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
                     {seoResult}
                   </div>
                 ) : (
@@ -222,7 +225,7 @@ export default function Analysis() {
               <CardHeader><CardTitle className="text-base">竞品报告</CardTitle></CardHeader>
               <CardContent>
                 {competitorResult ? (
-                  <div className="rounded-[14px] bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
+                  <div className="trade-signal-card p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
                     {competitorResult}
                   </div>
                 ) : (

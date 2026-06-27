@@ -80,10 +80,24 @@ public class JCClawService {
 
     /** 发起扫码绑定（清除旧凭证后获取新二维码） */
     public Map<String, Object> startLogin(String openclawHome) throws Exception {
+        return startLogin(openclawHome, false);
+    }
+
+    /** 发起扫码绑定。默认不抢占已有连接，避免多用户扫码互相踢下线。 */
+    public synchronized Map<String, Object> startLogin(String openclawHome, boolean forceTakeover) throws Exception {
+        if (!forceTakeover && (weChatBot.isRunning() || botToken != null || accountId != null)) {
+            Map<String, Object> conflict = getConnectionStatus();
+            conflict.put("success", false);
+            conflict.put("conflict", true);
+            conflict.put("message", "当前已有活动微信连接。如需重新扫码，请先确认接管连接。");
+            return conflict;
+        }
+
         clearCredentials();
         weChatBot.stop();
         botToken = null;
         accountId = null;
+        userId = null;
 
         Map<String, Object> result = new LinkedHashMap<>();
         String url = ILINK_BASE_URL + "/ilink/bot/get_bot_qrcode?bot_type=" + BOT_TYPE;
@@ -102,8 +116,8 @@ public class JCClawService {
         return result;
     }
 
-    public Map<String, Object> checkStatus(String openclawHome) {
-        Map<String, Object> result = new LinkedHashMap<>();
+    public synchronized Map<String, Object> checkStatus(String openclawHome) {
+        Map<String, Object> result = getConnectionStatus();
         result.put("connected", weChatBot.isRunning());
         if (currentQrcode == null) return result;
 
@@ -142,6 +156,32 @@ public class JCClawService {
         return result;
     }
 
+    public Map<String, Object> getConnectionStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        boolean running = weChatBot.isRunning();
+        status.put("running", running);
+        status.put("connected", running);
+        status.put("binding", currentQrcode != null);
+        status.put("accountId", accountId != null ? accountId : "");
+        status.put("userId", userId != null ? userId : "");
+        status.put("savedAccountCount", countSavedAccounts());
+        status.put("mode", "single_active_connection");
+        status.put("multiUserPolicy", "已有连接时默认阻止新扫码抢占；需要显式接管。");
+        status.put("conflictRisk", running || currentQrcode != null);
+        return status;
+    }
+
+    public synchronized void disconnect(boolean clearSavedCredentials) {
+        weChatBot.stop();
+        currentQrcode = null;
+        botToken = null;
+        accountId = null;
+        userId = null;
+        if (clearSavedCredentials) {
+            clearCredentials();
+        }
+    }
+
     private void saveCredentials() {
         if (botToken == null || accountId == null) return;
         try {
@@ -174,4 +214,15 @@ public class JCClawService {
     }
 
     public void cancelLogin() { currentQrcode = null; }
+
+    private int countSavedAccounts() {
+        try {
+            if (!Files.exists(ACCOUNTS_INDEX)) return 0;
+            @SuppressWarnings("unchecked")
+            List<String> ids = objectMapper.readValue(Files.readString(ACCOUNTS_INDEX), List.class);
+            return ids == null ? 0 : ids.size();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+﻿import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -62,14 +62,14 @@ interface ExecutionData {
 }
 
 const statusConfig = {
-  running:  { icon: Loader2,    color: "text-blue-500",        bg: "bg-blue-50 text-blue-700",          label: "运行中", animated: true },
+  running:  { icon: Loader2,    color: "text-[#1F5F53]",        bg: "bg-[#EEF7F3] text-[#1F5F53]",          label: "运行中", animated: true },
   completed:{ icon: CheckCircle2,color: "text-emerald-500",     bg: "bg-emerald-50 text-emerald-700",    label: "已完成", animated: false },
   pending:  { icon: Clock,      color: "text-muted-foreground", bg: "bg-muted text-muted-foreground",    label: "等待中", animated: false },
   error:    { icon: AlertCircle,color: "text-red-500",          bg: "bg-red-50 text-red-700",            label: "失败",   animated: false },
 } as const
 
 const logTypeConfig: Record<string, string> = {
-  info:    "bg-slate-50 text-slate-700",
+  info:    "bg-[#F4F6F5] text-[#74766F]",
   success: "bg-emerald-50 text-emerald-700",
   error:   "bg-red-50 text-red-700",
   warning: "bg-amber-50 text-amber-700",
@@ -161,13 +161,13 @@ export default function AgentExecutionCenter() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Agent 执行中心</h1>
-          <p className="mt-1 text-sm text-muted-foreground">实时监控 Agent 任务执行、工具调用与运行日志</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="page-kicker">LIVE AGENT OPS</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">Agent 执行中心</h1>
+            <p className="mt-2 text-sm text-muted-foreground">实时监控 Agent 任务执行、工具调用与运行日志。</p>
+          </div>
           <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             刷新
@@ -183,13 +183,13 @@ export default function AgentExecutionCenter() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
-                    <Loader2 size={15} className="text-blue-500 animate-spin" />
+                    <Loader2 size={15} className="text-[#1F5F53] animate-spin" />
                     <div>
                       <p className="text-sm font-semibold">{agent.name}</p>
                       <p className="text-[11px] text-muted-foreground" title={agent.task}>{agent.task}</p>
                     </div>
                   </div>
-                  <Badge variant="blue" className="text-[10px]">活跃</Badge>
+                  <Badge variant="success" className="text-[10px]">活跃</Badge>
                 </div>
                 <Progress value={Math.min(agent.messageCount * 5, 100)} className="h-1.5" />
                 <p className="text-[11px] text-muted-foreground mt-2">{agent.messageCount} 条消息</p>
@@ -227,9 +227,9 @@ export default function AgentExecutionCenter() {
                     return (
                       <div
                         key={call.id}
-                        className="flex items-center gap-3 py-2.5 px-2 rounded-[10px] hover:bg-muted/50 transition-colors"
+                        className="flex items-center gap-3 py-2.5 px-2 rounded-[8px] hover:bg-muted/50 transition-colors"
                       >
-                        <div className="w-8 h-8 rounded-[10px] bg-muted flex items-center justify-center flex-shrink-0">
+                        <div className="ai-orbit w-8 h-8 rounded-[8px] bg-muted flex items-center justify-center flex-shrink-0">
                           {getToolIcon(call.tool)}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -285,7 +285,7 @@ export default function AgentExecutionCenter() {
                     <div key={log.id}>
                       {i > 0 && <Separator className="my-1 ml-10" />}
                       <div className="flex items-start gap-3 py-2 px-2 rounded-[8px] hover:bg-muted/30 transition-colors">
-                        <div className={`w-7 h-7 rounded-[10px] flex items-center justify-center flex-shrink-0 ${logTypeConfig[log.type] || "bg-slate-50 text-slate-700"}`}>
+                        <div className={`w-7 h-7 rounded-[10px] flex items-center justify-center flex-shrink-0 ${logTypeConfig[log.type] || "bg-[#F4F6F5] text-[#74766F]"}`}>
                           {log.type === "error" ? (
                             <AlertCircle size={13} />
                           ) : log.type === "warning" ? (
@@ -323,12 +323,12 @@ export default function AgentExecutionCenter() {
       {/* Summary Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up">
         {[
-          { label: "活跃 Agent", value: String(stats.activeAgents), color: "text-blue-600" },
+          { label: "活跃 Agent", value: String(stats.activeAgents), color: "text-[#1F5F53]" },
           { label: "工具调用", value: String(stats.toolCalls), color: "text-amber-600" },
           { label: "成功率", value: stats.successRate + "%", color: "text-emerald-600" },
-          { label: "平均延迟", value: stats.avgLatency, color: "text-violet-600" },
+          { label: "平均延迟", value: stats.avgLatency, color: "text-[#2F6B5F]" },
         ].map((stat) => (
-          <div key={stat.label} className="text-center p-3 rounded-[16px] bg-card border border-border">
+          <div key={stat.label} className="trade-signal-card text-center p-3">
             <p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">{stat.label}</p>
           </div>

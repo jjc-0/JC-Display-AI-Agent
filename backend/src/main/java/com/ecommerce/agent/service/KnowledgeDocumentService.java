@@ -76,14 +76,9 @@ public class KnowledgeDocumentService {
         log.info("文档已保存: id={}, title={}, type={}, chars={}",
                 doc.getId(), doc.getTitle(), fileType, parsed.charCount());
 
-        // 5. 触发 RAG 重新索引（延迟策略，避免频繁重建）
-        // 这里改为增量索引是更好的选择，但当前架构暂用全量重建
-        // 用一个 debounce 计数器 — 每上传 3 个文档才触发重建
-        long totalUserDocs = repo.countBySourceType("USER_UPLOAD");
-        if (totalUserDocs % 3 == 0) {
-            knowledgeBaseLoader.forceReload();
-            log.info("已触发知识库重新索引 (累计{}个用户文档)", totalUserDocs);
-        }
+        // 增量索引：manifest 会跳过已向量化内容，只处理新文档或变化文档。
+        knowledgeBaseLoader.forceReload();
+        log.info("已触发知识库增量索引: docId={}", doc.getId());
 
         return doc;
     }

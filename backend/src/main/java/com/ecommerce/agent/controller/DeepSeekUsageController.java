@@ -113,15 +113,19 @@ public class DeepSeekUsageController {
             long todayCalls = allRecords.stream()
                     .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().toLocalDate().equals(LocalDate.now()))
                     .count();
+            OptionalDouble avgLatency = allRecords.stream()
+                    .filter(r -> r.getProcessingTimeMs() != null && r.getProcessingTimeMs() >= 0)
+                    .mapToLong(r -> r.getProcessingTimeMs())
+                    .average();
 
             usage.put("totalCalls", totalCalls);
             usage.put("todayCalls", todayCalls);
+            usage.put("avgLatencyMs", avgLatency.isPresent() ? Math.round(avgLatency.getAsDouble()) : null);
 
             // Model breakdown
             Map<String, Long> modelCounts = new LinkedHashMap<>();
             for (var r : allRecords) {
-                String model = r.getModelUsed() != null ? r.getModelUsed() : "unknown";
-                modelCounts.merge(model, 1L, Long::sum);
+                modelCounts.merge("JC agent", 1L, Long::sum);
             }
             usage.put("modelBreakdown", modelCounts);
 
@@ -141,12 +145,12 @@ public class DeepSeekUsageController {
             var records = recordRepository.findAll(PageRequest.of(0, 20, Sort.by("createdAt").descending())).getContent();
             for (var r : records) {
                 Map<String, Object> call = new LinkedHashMap<>();
+                call.put("id", r.getId());
                 call.put("time", r.getCreatedAt() != null ? r.getCreatedAt().toString() : "");
-                call.put("model", r.getModelUsed() != null ? r.getModelUsed() : "deepseek-chat");
+                call.put("model", "JC agent");
                 call.put("role", r.getRole());
-                call.put("tokens", r.getProcessingTimeMs() != null ? r.getProcessingTimeMs() / 10 : 500);
-                call.put("latency", r.getProcessingTimeMs() != null ? r.getProcessingTimeMs() : 800);
-                call.put("status", "success");
+                call.put("operationType", r.getOperationType());
+                call.put("latency", r.getProcessingTimeMs());
                 calls.add(call);
             }
         } catch (Exception e) {

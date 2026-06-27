@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
@@ -14,11 +14,11 @@ const SelectTrigger = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "flex h-10 w-full items-center justify-between rounded-[12px] border border-border bg-card px-4 py-2 text-sm placeholder:text-muted-foreground/60 transition-colors duration-200",
+      ref={ref}
+      className={cn(
+      "flex h-10 w-full items-center justify-between rounded-[12px] border border-[#E4E8E5] bg-[#FFFFFF] px-4 py-2 text-sm placeholder:text-muted-foreground/60 transition-colors duration-200",
       "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0",
-      "hover:border-muted-foreground/20",
+      "hover:border-[#D3DAD6]",
       "disabled:cursor-not-allowed disabled:opacity-50",
       className
     )}
@@ -40,7 +40,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-[16px] border border-border bg-card text-popover-foreground shadow-md animate-in fade-in-80",
+        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-[14px] border border-[#E4E8E5] bg-[#FFFFFF] text-popover-foreground shadow-[0_18px_40px_-30px_rgba(15,23,42,0.16)] animate-in fade-in-80",
         position === "popper" && "translate-y-1",
         className
       )}
@@ -79,9 +79,9 @@ const SelectItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
-    className={cn(
-      "relative flex w-full cursor-pointer select-none items-center rounded-[10px] py-1.5 pl-3 pr-8 text-sm outline-none transition-colors",
-      "focus:bg-muted focus:text-foreground",
+      className={cn(
+      "relative flex w-full cursor-pointer select-none items-center rounded-[7px] py-1.5 pl-3 pr-8 text-sm outline-none transition-colors",
+      "focus:bg-[#F4F6F5] focus:text-foreground",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
     )}

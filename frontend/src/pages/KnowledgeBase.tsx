@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import {
   Database,
@@ -18,18 +19,72 @@ import {
   CheckCircle2,
   AlertCircle,
   Trash2,
+  BrainCircuit,
 } from "lucide-react"
 import api from "@/lib/api"
 
 const ACCEPTED_TYPES = ".pdf,.docx,.doc,.txt,.md"
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
+type IndexProgress = {
+  taskId?: string
+  state: "idle" | "running" | "completed" | "failed"
+  running?: boolean
+  trigger?: string
+  phase?: string
+  progress: number
+  processedItems?: number
+  totalItems?: number
+  changedItems?: number
+  removedItems?: number
+  message?: string
+  startedAt?: string | null
+  updatedAt?: string | null
+  finishedAt?: string | null
+  error?: string | null
+}
+
+const phaseLabels: Record<string, string> = {
+  idle: "空闲",
+  preparing: "准备中",
+  loading: "读取数据",
+  loading_documents: "读取文档",
+  loading_products: "读取产品",
+  manifest: "比对清单",
+  removing: "清理旧向量",
+  embedding_documents: "向量化文档",
+  embedding_products: "向量化产品",
+  persisting: "保存索引",
+  completed: "已完成",
+  failed: "失败",
+}
+
 export default function KnowledgeBase() {
   const [products, setProducts] = useState<any[]>([])
   const [documents, setDocuments] = useState<any[]>([])
   const [search, setSearch] = useState("")
+  const [ragQuery, setRagQuery] = useState("")
+  const [ragTopK, setRagTopK] = useState(5)
+  const [ragLoading, setRagLoading] = useState(false)
+  const [ragResults, setRagResults] = useState<any[]>([])
+  const [ragMessage, setRagMessage] = useState("")
+  const [reloadingIndex, setReloadingIndex] = useState(false)
+  const [indexProgress, setIndexProgress] = useState<IndexProgress>({
+    state: "idle",
+    progress: 100,
+    message: "当前没有索引更新任务",
+  })
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState({ productCount: 0, docCount: 0, enabled: false })
+  const [stats, setStats] = useState({
+    productCount: 0,
+    docCount: 0,
+    enabled: false,
+    autoInject: false,
+    retrievalMode: "",
+    productVectorIndexEnabled: false,
+    maxProductEmbeddings: 0,
+    productEmbeddingScope: "",
+  })
   const [uploadOpen, setUploadOpen] = useState(false)
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
@@ -46,8 +101,24 @@ export default function KnowledgeBase() {
     abortRef.current = controller
     const { signal } = controller
     loadData(signal)
+    loadIndexProgress(signal)
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    const shouldPoll = indexProgress.running || indexProgress.state === "running"
+    if (!shouldPoll) return
+
+    const timer = window.setInterval(() => {
+      loadIndexProgress()
+    }, 1500)
+
+    return () => window.clearInterval(timer)
+  }, [indexProgress.running, indexProgress.state])
+
+  useEffect(() => {
+    setReloadingIndex(indexProgress.running || indexProgress.state === "running")
+  }, [indexProgress.running, indexProgress.state])
 
   const loadData = async (signal?: AbortSignal) => {
     setLoading(true)
@@ -66,6 +137,11 @@ export default function KnowledgeBase() {
           productCount: s.productCount ?? 0,
           docCount: s.knowledgeDocumentCount ?? 0,
           enabled: s.enabled ?? false,
+          autoInject: s.autoInject ?? false,
+          retrievalMode: s.retrievalMode ?? "",
+          productVectorIndexEnabled: s.productVectorIndexEnabled ?? false,
+          maxProductEmbeddings: s.maxProductEmbeddings ?? 0,
+          productEmbeddingScope: s.productEmbeddingScope ?? "",
         })
       }
       if (prodRes.status === "fulfilled") {
@@ -78,6 +154,40 @@ export default function KnowledgeBase() {
       }
     } catch {}
     setLoading(false)
+  }
+
+  const normalizeProgress = (data: any): IndexProgress => ({
+    taskId: data?.taskId || "",
+    state: data?.state || "idle",
+    running: Boolean(data?.running),
+    trigger: data?.trigger || "",
+    phase: data?.phase || "idle",
+    progress: Math.max(0, Math.min(100, Number(data?.progress ?? 0))),
+    processedItems: Number(data?.processedItems ?? 0),
+    totalItems: Number(data?.totalItems ?? 0),
+    changedItems: Number(data?.changedItems ?? 0),
+    removedItems: Number(data?.removedItems ?? 0),
+    message: data?.message || "",
+    startedAt: data?.startedAt || null,
+    updatedAt: data?.updatedAt || null,
+    finishedAt: data?.finishedAt || null,
+    error: data?.error || null,
+  })
+
+  const loadIndexProgress = async (signal?: AbortSignal) => {
+    try {
+      const { data } = await api.get("/agent/knowledge/index-progress", { signal })
+      if (signal?.aborted) return
+      const next = normalizeProgress(data)
+      setIndexProgress(next)
+      if (next.state === "completed" && next.progress === 100) {
+        loadData()
+      }
+    } catch (e) {
+      if (!signal?.aborted) {
+        console.error("加载索引进度失败", e)
+      }
+    }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,6 +261,61 @@ export default function KnowledgeBase() {
     }
   }
 
+  const handleRagSearch = async () => {
+    if (!ragQuery.trim()) return
+    setRagLoading(true)
+    setRagMessage("")
+    try {
+      const { data } = await api.post("/agent/knowledge/search", {
+        query: ragQuery.trim(),
+        maxResults: ragTopK,
+      })
+      setRagResults(Array.isArray(data?.results) ? data.results : [])
+      setRagMessage(data?.ragUsed ? "已命中知识库，Agent 对话会自动注入这些上下文。" : "未找到足够相关的知识片段。")
+    } catch (e: any) {
+      setRagMessage(e.response?.data?.message || "检索失败，请检查后端服务")
+    } finally {
+      setRagLoading(false)
+    }
+  }
+
+  const handleReloadIndex = async () => {
+    setReloadingIndex(true)
+    setRagMessage("")
+    try {
+      const { data } = await api.post("/agent/knowledge/reload")
+      const next = normalizeProgress(data)
+      setIndexProgress(next)
+      setRagMessage(data?.message || "索引更新已启动")
+      loadIndexProgress()
+    } catch (e: any) {
+      setRagMessage(e.response?.data?.message || "重建索引失败")
+      setReloadingIndex(false)
+      setIndexProgress((prev) => ({
+        ...prev,
+        state: "failed",
+        running: false,
+        error: e.response?.data?.message || "重建索引失败",
+        message: e.response?.data?.message || "重建索引失败",
+      }))
+    }
+  }
+
+  const formatIndexTime = (value?: string | null) => {
+    if (!value) return "—"
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value.replace("T", " ").slice(0, 19)
+    return date.toLocaleString("zh-CN", { hour12: false })
+  }
+
+  const indexStatusTone = indexProgress.state === "failed"
+    ? "destructive"
+    : indexProgress.state === "running"
+      ? "secondary"
+      : indexProgress.state === "completed"
+        ? "success"
+        : "secondary"
+
   const filteredProducts = products.filter((p) =>
     (p.name || "").toLowerCase().includes(search.toLowerCase()) ||
     (p.sku || "").toLowerCase().includes(search.toLowerCase())
@@ -158,14 +323,16 @@ export default function KnowledgeBase() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">RAG 知识库</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {loading ? "加载中..." : `${stats.productCount} 款产品 · ${stats.docCount} 篇文档`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="page-kicker">PRODUCT KNOWLEDGE</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">RAG 知识库</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {loading ? "加载中..." : `${stats.productCount} 款产品 · ${stats.docCount} 篇文档`}，为询盘回复和外贸 Agent 提供可追溯上下文。
+            </p>
+          </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
             <DialogTrigger asChild>
               <Button variant="default" size="sm">
@@ -183,7 +350,7 @@ export default function KnowledgeBase() {
                 {/* 拖拽区域 */}
                 <div
                   ref={dropRef}
-                  className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer
+                  className={`border-2 border-dashed rounded-[8px] p-6 text-center transition-colors cursor-pointer
                     ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
                   onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
                   onDragLeave={() => setDragOver(false)}
@@ -215,7 +382,7 @@ export default function KnowledgeBase() {
                       return (
                         <div
                           key={`${file.name}-${i}`}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50"
+                          className="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-muted/50"
                         >
                           <File size={14} className="text-muted-foreground flex-shrink-0" />
                           <span className="text-sm truncate flex-1">{file.name}</span>
@@ -276,35 +443,146 @@ export default function KnowledgeBase() {
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             刷新
           </Button>
+          <Button variant="outline" size="sm" onClick={handleReloadIndex} disabled={reloadingIndex}>
+            <RefreshCw size={14} className={reloadingIndex ? "animate-spin" : ""} />
+            {reloadingIndex ? "更新中" : "重建索引"}
+          </Button>
           <Badge variant={stats.enabled ? "success" : "secondary"} className="text-[11px]">
             <Database size={11} /> {stats.enabled ? "RAG Engine ON" : "RAG OFF"}
           </Badge>
         </div>
+        </div>
       </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={indexStatusTone as any} className="text-[11px]">
+                  {phaseLabels[indexProgress.phase || "idle"] || indexProgress.phase || "索引状态"}
+                </Badge>
+                <span className="text-sm font-semibold text-foreground">
+                  RAG 向量索引
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {indexProgress.message || "当前没有索引更新任务"}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <Progress value={indexProgress.progress} className="h-2 flex-1" />
+                <span className="w-12 text-right font-mono text-xs text-muted-foreground">
+                  {Math.round(indexProgress.progress)}%
+                </span>
+              </div>
+              {indexProgress.error && (
+                <p className="mt-2 text-xs text-red-600">{indexProgress.error}</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+              <span>待更新 {indexProgress.changedItems ?? 0}</span>
+              <span>移除 {indexProgress.removedItems ?? 0}</span>
+              <span>
+                处理 {indexProgress.processedItems ?? 0}
+                {indexProgress.totalItems ? ` / ${indexProgress.totalItems}` : ""}
+              </span>
+              <span>更新 {formatIndexTime(indexProgress.updatedAt)}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="text-center p-4 rounded-[16px] bg-card border border-border">
+        <div className="trade-signal-card text-center p-4">
           <Box size={20} className="mx-auto mb-1 text-primary" />
           <p className="text-xl font-bold">{loading ? "—" : stats.productCount}</p>
           <p className="text-[11px] text-muted-foreground">产品数据 (MySQL)</p>
         </div>
-        <div className="text-center p-4 rounded-[16px] bg-card border border-border">
-          <FileText size={20} className="mx-auto mb-1 text-blue-500" />
+        <div className="trade-signal-card text-center p-4">
+          <FileText size={20} className="mx-auto mb-1 text-[#516B63]" />
           <p className="text-xl font-bold">{loading ? "—" : stats.docCount}</p>
           <p className="text-[11px] text-muted-foreground">知识文档 (MySQL)</p>
         </div>
-        <div className="text-center p-4 rounded-[16px] bg-card border border-border">
+        <div className="trade-signal-card text-center p-4">
           <BookOpen size={20} className="mx-auto mb-1 text-emerald-500" />
           <p className="text-xl font-bold">{stats.enabled ? "ON" : "OFF"}</p>
           <p className="text-[11px] text-muted-foreground">RAG 引擎状态</p>
         </div>
-        <div className="text-center p-4 rounded-[16px] bg-card border border-border">
-          <Database size={20} className="mx-auto mb-1 text-violet-500" />
+        <div className="trade-signal-card text-center p-4">
+          <Database size={20} className="mx-auto mb-1 text-[#0B918C]" />
           <p className="text-xl font-bold">MySQL</p>
-          <p className="text-[11px] text-muted-foreground">数据存储</p>
+          <p className="text-[11px] text-muted-foreground">
+            {stats.productVectorIndexEnabled
+              ? `产品向量 ${stats.productEmbeddingScope === "all" ? "全量" : stats.maxProductEmbeddings}`
+              : "数据存储"}
+          </p>
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <BrainCircuit size={16} className="text-[#1F5F53]" /> RAG 检索验证
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {stats.autoInject ? "Agent 对话已开启自动注入。" : "当前未开启自动注入。"}
+                {stats.retrievalMode ? ` ${stats.retrievalMode}` : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={ragTopK}
+                onChange={(e) => setRagTopK(Math.max(1, Math.min(10, Number(e.target.value) || 5)))}
+                className="h-9 w-20 text-xs"
+              />
+              <Button size="sm" onClick={handleRagSearch} disabled={ragLoading || !ragQuery.trim()}>
+                {ragLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                检索
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={ragQuery}
+              onChange={(e) => setRagQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleRagSearch() }}
+              placeholder="输入一个真实业务问题，例如：展示架出口德国需要注意什么认证？"
+              className="h-10 pl-8 text-sm"
+            />
+          </div>
+          {ragMessage && (
+            <div className="rounded-[10px] border border-[#E4E8E5] bg-[#F8FBFA] px-3 py-2 text-xs text-muted-foreground">
+              {ragMessage}
+            </div>
+          )}
+          {ragResults.length > 0 && (
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+              {ragResults.map((item, i) => (
+                <div key={`${item.source}-${i}`} className="rounded-[10px] border border-[#E4E8E5] bg-white p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <Badge variant="secondary" className="text-[10px]">
+                      #{item.rank || i + 1} {item.source || "knowledge"}
+                    </Badge>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      score {Number(item.score || 0).toFixed(3)}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-[#343A35]">{item.snippet}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Products */}
       <Card>
@@ -378,7 +656,7 @@ export default function KnowledgeBase() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <FileText size={16} className="text-blue-500" /> 知识文档
+            <FileText size={16} className="text-[#516B63]" /> 知识文档
             <span className="text-xs text-muted-foreground font-normal">(共 {stats.docCount} 篇)</span>
           </CardTitle>
         </CardHeader>
@@ -394,8 +672,8 @@ export default function KnowledgeBase() {
                   key={d.id || i}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-[10px] hover:bg-muted/50 transition-colors group"
                 >
-                  <div className="w-8 h-8 rounded-[8px] bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <FileText size={14} className="text-blue-500" />
+                  <div className="w-8 h-8 rounded-[8px] bg-[#F4F6F5] flex items-center justify-center flex-shrink-0">
+                    <FileText size={14} className="text-[#516B63]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{d.title || `Document #${i + 1}`}</p>

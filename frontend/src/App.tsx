@@ -1,49 +1,42 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { Suspense } from "react"
 import Layout from "@/components/layout/Layout"
-import Dashboard from "@/pages/Dashboard"
-import AgentChat from "@/pages/AgentChat"
-import AgentSquare from "@/pages/AgentSquare"
-import AgentExecutionCenter from "@/pages/AgentExecutionCenter"
-import InquiryScoring from "@/pages/InquiryScoring"
-import CopyWriting from "@/pages/CopyWriting"
-import Translate from "@/pages/Translate"
-import Analysis from "@/pages/Analysis"
-import ImageRecognition from "@/pages/ImageRecognition"
-import KnowledgeBase from "@/pages/KnowledgeBase"
-import Templates from "@/pages/Templates"
-import Channels from "@/pages/Channels"
-import ApiIntegration from "@/pages/ApiIntegration"
-import AuthCenter from "@/pages/AuthCenter"
-import WorkflowBuilder from "@/pages/WorkflowBuilder"
-import JCClaw from "@/pages/JCClaw"
-import ProductImage from "@/pages/ProductImage"
+import { protectedRoutes } from "@/config/routes"
+import Login from "@/pages/Login"
+import Register from "@/pages/Register"
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("jc-auth-token")
+  return token ? <>{children}</> : <Navigate to="/login" replace />
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/new-user" element={<Register />} />
+        <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
           <Route index element={<Navigate to="/agent-chat" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="agent-chat" element={<AgentChat />} />
-          <Route path="agent-square" element={<AgentSquare />} />
-          <Route path="agent-execution" element={<AgentExecutionCenter />} />
-          <Route path="inquiry" element={<InquiryScoring />} />
-          <Route path="copywriting" element={<CopyWriting />} />
-          <Route path="translate" element={<Translate />} />
-          <Route path="analysis" element={<Analysis />} />
-          <Route path="image-recognition" element={<ImageRecognition />} />
-          <Route path="knowledge-base" element={<KnowledgeBase />} />
-          <Route path="templates" element={<Templates />} />
-          <Route path="channels" element={<Channels />} />
-          <Route path="api-integration" element={<ApiIntegration />} />
-          <Route path="auth-center" element={<AuthCenter />} />
-          <Route path="workflow" element={<WorkflowBuilder />} />
-          <Route path="jc-claw" element={<JCClaw />} />
-          <Route path="product-image" element={<ProductImage />} />
+          {protectedRoutes.map((route) => (
+            <Route
+              key={route.path}
+              path={route.path}
+              element={<Suspense fallback={<RouteLoading />}>{route.element}</Suspense>}
+            />
+          ))}
           <Route path="*" element={<Navigate to="/agent-chat" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
+  )
+}
+
+function RouteLoading() {
+  return (
+    <div className="flex min-h-[260px] items-center justify-center">
+      <div className="h-10 w-[220px] animate-pulse rounded-[8px] bg-[#F4F6F5]" />
+    </div>
   )
 }

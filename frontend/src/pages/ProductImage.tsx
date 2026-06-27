@@ -55,16 +55,19 @@ export default function ProductImage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">电商产品图生成</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            输入产品描述，AI 自动生成专业电商产品图
-          </p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">PRODUCT VISUALS</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">电商产品图生成</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              输入产品描述，AI 自动生成适合展示架、包装和外贸详情页的产品图。
+            </p>
+          </div>
+          <Badge variant="success" className="text-[11px]">
+            <Wand2 size={11} /> AI Image Gen
+          </Badge>
         </div>
-        <Badge variant="success" className="text-[11px]">
-          <Wand2 size={11} /> AI Image Gen
-        </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -112,7 +115,7 @@ export default function ProductImage() {
             </Button>
 
             {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-xs">{error}</div>
+              <div className="p-3 rounded-[8px] bg-destructive/10 text-destructive text-xs">{error}</div>
             )}
           </CardContent>
         </Card>
@@ -136,7 +139,7 @@ export default function ProductImage() {
               <div className="space-y-4">
                 {images.map((src, i) => (
                   <div key={i} className="space-y-2">
-                    <div className="relative group rounded-xl overflow-hidden border border-border bg-muted/30">
+                    <div className="relative group rounded-[8px] overflow-hidden border border-border bg-muted/30">
                       <img
                         src={src}
                         alt={`生成图 ${i + 1}`}
@@ -145,7 +148,7 @@ export default function ProductImage() {
                       />
                       <button
                         onClick={() => downloadImage(src, i)}
-                        className="absolute top-3 right-3 p-2 rounded-lg bg-background/80 backdrop-blur-sm border border-border opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-3 right-3 p-2 rounded-[8px] bg-background/80 backdrop-blur-sm border border-border opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <Download size={15} />
                       </button>

@@ -13,6 +13,8 @@ import com.ecommerce.agent.service.SessionTitleService;
 import com.ecommerce.agent.service.v2.MemoryService;
 import com.ecommerce.agent.tool.ToolRouter;
 import com.ecommerce.agent.tool.ToolRegistry;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -53,6 +55,7 @@ public class AgentRuntime {
     private final MemoryService memoryService;
     private final SessionTitleService titleService;
     private final AgentTaskRepository taskRepo;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AgentRuntime(MultiModelOrchestrator orchestrator,
                         PromptTemplateManager promptManager,
@@ -111,8 +114,15 @@ public class AgentRuntime {
         LLMProvider provider = orchestrator.getProvider();
         String modelUsed = provider.getDefaultModel();
 
+        AgentResponse directResponse = tryHandleKnowledgeStatusIntent(request, sessionId, userMessage, modelUsed, startTime);
+        if (directResponse != null) {
+            return directResponse;
+        }
+
         // 3. 构建增强系统 Prompt (Memory + RAG + Task Context)
-        String systemPrompt = buildEnhancedSystemPrompt(request, sessionId);
+        EnhancedSystemPrompt enhancedPrompt = buildEnhancedSystemPrompt(request, sessionId);
+        String systemPrompt = enhancedPrompt.prompt();
+        RAGService.RAGContext ragContext = enhancedPrompt.ragContext();
 
         // 4. 开始 Agent 循环
         ExecutionState state = new ExecutionState(sessionId, provider, modelUsed, startTime);
@@ -219,6 +229,13 @@ public class AgentRuntime {
                         .durationMs(toolResult.durationMs())
                         .build());
 
+                if ("wechat_control".equals(toolResult.toolName())) {
+                    state.finalAnswer = formatWeChatFailure(toolResult.error());
+                    state.done = true;
+                    state.roundsExecuted = round + 1;
+                    break;
+                }
+
                 // 告诉 LLM 工具失败了, 让它自行处理
                 currentMessage = "工具 " + toolResult.toolName() + " 执行失败: "
                         + toolResult.error() + "。请尝试其他方式完成用户的请求。";
@@ -273,6 +290,8 @@ public class AgentRuntime {
                         "toolCallRounds", toolCallRecords.size(),
                         "totalRounds", state.roundsExecuted,
                         "memoryEnabled", true,
+                        "ragUsed", ragContext.hasContext(),
+                        "ragCitations", ragContext.citations(),
                         "runtimeVersion", "v2"
                 ))
                 .processingTimeMs(System.currentTimeMillis() - startTime)
@@ -327,7 +346,130 @@ public class AgentRuntime {
         return sessionImages.getOrDefault(sessionId, List.of());
     }
 
-    private String buildEnhancedSystemPrompt(AgentRequest request, String sessionId) {
+    private AgentResponse tryHandleKnowledgeStatusIntent(AgentRequest request,
+                                                         String sessionId,
+                                                         String userMessage,
+                                                         String modelUsed,
+                                                         long startTime) {
+        if (!isKnowledgeStatusIntent(userMessage) || !toolRegistry.hasTool("knowledge_base_status")) {
+            return null;
+        }
+
+        ToolRouter.ToolCallResult toolResult = toolRouter.execute(
+                "knowledge_base_status",
+                Map.of("include_topics", false),
+                Map.of("session_id", sessionId)
+        );
+
+        AgentResponse.ToolCallRecord record = AgentResponse.ToolCallRecord.builder()
+                .toolName("knowledge_base_status")
+                .input("{include_topics=false}")
+                .output(toolResult.output())
+                .status(toolResult.success() ? "success" : "failed")
+                .durationMs(toolResult.durationMs())
+                .build();
+
+        String answer = toolResult.success()
+                ? formatKnowledgeStatusAnswer(toolResult.output())
+                : "查询 RAG 产品库状态失败: " + toolResult.error();
+
+        long durationMs = System.currentTimeMillis() - startTime;
+        conversationManager.addMessage(sessionId, "assistant", answer, modelUsed, durationMs);
+
+        return AgentResponse.builder()
+                .sessionId(sessionId)
+                .message(answer)
+                .taskType(request.getTaskType())
+                .status(toolResult.success() ? "success" : "failed")
+                .toolCalls(List.of(record))
+                .metadata(Map.of(
+                        "contextSize", conversationManager.getHistory(sessionId).size(),
+                        "toolsEnabled", true,
+                        "toolsAvailable", toolRegistry.getAllTools().stream()
+                                .map(t -> t.getName()).toList(),
+                        "toolCallRounds", 1,
+                        "totalRounds", 1,
+                        "memoryEnabled", true,
+                        "ragUsed", false,
+                        "ragCitations", List.of(),
+                        "runtimeVersion", "v2",
+                        "directKnowledgeStatusRoute", true
+                ))
+                .processingTimeMs(durationMs)
+                .modelUsed(modelUsed)
+                .build();
+    }
+
+    private boolean isKnowledgeStatusIntent(String message) {
+        if (message == null || message.isBlank()) return false;
+        String text = message.toLowerCase(Locale.ROOT)
+                .replaceAll("[\\s　，。！？?；;：:,、\"'“”‘’()（）\\[\\]{}]+", "");
+
+        boolean countIntent = containsAny(text, "多少", "几个", "几款", "数量", "总数", "统计", "count", "howmany", "numberof");
+        boolean productLibrary = containsAny(text, "rag产品库", "rag商品库", "产品库", "商品库", "本公司产品", "公司产品",
+                "productlibrary", "productcatalog", "productcount", "ragproducts");
+        boolean knowledgeDocuments = containsAny(text, "知识库文档", "rag文档", "文档数量", "资料数量",
+                "knowledgedocument", "documentscount");
+        boolean vectorOrIndex = containsAny(text, "向量化", "向量索引", "索引状态", "embedding", "vectorindex",
+                "indexed", "indexstatus");
+        boolean ragStatus = text.contains("rag") && containsAny(text, "状态", "status", "索引", "向量", "数量", "count");
+
+        return (countIntent && productLibrary) || knowledgeDocuments || vectorOrIndex || ragStatus;
+    }
+
+    private boolean containsAny(String text, String... needles) {
+        for (String needle : needles) {
+            if (text.contains(needle)) return true;
+        }
+        return false;
+    }
+
+    private String formatKnowledgeStatusAnswer(String output) {
+        try {
+            JsonNode root = objectMapper.readTree(output);
+            long productCount = root.path("rag_product_count").asLong();
+            long enabledProductCount = root.path("enabled_product_count").asLong();
+            long documentCount = root.path("knowledge_document_count").asLong();
+            boolean vectorEnabled = root.path("product_vector_index_enabled").asBoolean();
+            boolean indexPersisted = root.path("embedding_index_persisted").asBoolean();
+            boolean manifestPersisted = root.path("embedding_manifest_persisted").asBoolean();
+            String scope = root.path("product_embedding_scope").asText("unknown");
+
+            return "当前 RAG 产品库中查询到 " + productCount + " 个产品，其中启用产品 "
+                    + enabledProductCount + " 个。知识库文档为 " + documentCount + " 个。"
+                    + "产品向量索引" + (vectorEnabled ? "已启用" : "未启用")
+                    + "，向量化范围为 " + ("all".equals(scope) ? "全部产品" : "限制数量")
+                    + "；索引文件" + (indexPersisted ? "已持久化" : "尚未持久化")
+                    + "，增量清单" + (manifestPersisted ? "已持久化" : "尚未持久化")
+                    + "。这个结果来自 RAG 产品库状态工具，不是会话数量。";
+        } catch (Exception e) {
+            log.warn("格式化知识库状态失败: {}", e.getMessage());
+            return output;
+        }
+    }
+
+    private String formatWeChatFailure(String output) {
+        try {
+            JsonNode root = objectMapper.readTree(output);
+            String toUserId = root.path("to_user_id").asText("");
+            JsonNode raw = root.path("raw_response");
+            String ret = raw.has("ret") ? raw.path("ret").asText() : "";
+            String errcode = raw.has("errcode") ? raw.path("errcode").asText() : "";
+            String error = root.path("error").asText("微信 API 返回失败");
+
+            StringBuilder sb = new StringBuilder("微信 API 返回失败，消息没有发送成功。");
+            if (!toUserId.isBlank()) sb.append("\n\n目标: ").append(toUserId);
+            if (!ret.isBlank()) sb.append("\nret: ").append(ret);
+            if (!errcode.isBlank()) sb.append("\nerrcode: ").append(errcode);
+            sb.append("\n原因: ").append(error);
+            sb.append("\n\n当前 JC claw 只能发送给 iLink API 允许的目标；如果 filehelper 返回 ret=-3，说明这个 Bot 通道没有获得向文件传输助手发送消息的权限或该目标不被 iLink Bot 支持。");
+            return sb.toString();
+        } catch (Exception e) {
+            return "微信 API 返回失败，消息没有发送成功。\n\n" + output;
+        }
+    }
+
+    private EnhancedSystemPrompt buildEnhancedSystemPrompt(AgentRequest request, String sessionId) {
         Map<String, String> vars = new HashMap<>();
         vars.put("targetCountry", request.getParameters() != null
                 ? (String) request.getParameters().getOrDefault("targetCountry", "US")
@@ -351,6 +493,35 @@ public class AgentRuntime {
             enhanced.append(memoryContext);
         }
 
+        enhanced.append("""
+
+## 工具调用约束
+当用户询问 RAG 产品库数量、公司产品库中有多少产品、知识库文档数量、产品是否已向量化、索引状态时，必须调用 knowledge_base_status 工具获取真实数据。不要使用 sessions、对话记录数量或历史会话统计来回答产品库数量。
+当用户询问本公司产品、产品推荐、产品价格、材料、SKU、分类、产品详情或产品网址时，必须优先调用 product_catalog_search；回答中每个被推荐或提及的产品都必须附上 Product URL/产品链接。没有链接时明确说明产品库暂未记录链接，不要省略这个字段。
+当用户在网页端或 JC claw 中要求“给某个微信用户/客户/联系人发消息、通知、跟进、转发内容”时，必须调用 wechat_control。若目标不明确，先调用 list_users 或用 to_user_keyword 匹配，不要假装已经发送。
+JC claw 不能读取完整微信通讯录。微信发送能力仅覆盖“文件传输助手(filehelper)”和已与 JC claw 产生过会话的活跃用户。用户要求发给文件传输助手时，直接调用 wechat_control send_message，目标用 to_user_id=filehelper 或 to_user_keyword=文件传输助手。
+如果 wechat_control 返回 success=false、business_error 或 iLink ret/errcode 非 0，必须明确告诉用户“微信 API 返回失败，消息未发送成功”，并附上 ret/errcode；不要猜测已经发送，也不要编造联系人权限。
+""");
+
+        int ragMaxResults = 6;
+        if (request.getParameters() != null && request.getParameters().get("ragTopK") != null) {
+            try {
+                ragMaxResults = Math.max(1, Math.min(10,
+                        Integer.parseInt(request.getParameters().get("ragTopK").toString())));
+            } catch (NumberFormatException ignored) {}
+        }
+        RAGService.RAGContext ragContext = ragService.buildContext(request.getMessage(), ragMaxResults);
+        if (ragContext.hasContext()) {
+            enhanced.append("""
+
+## 可用知识库上下文
+以下内容来自企业知识库、产品库或用户上传文档。回答涉及公司、产品、材料、报价、交付、合规、客户询盘时，必须优先参考这些内容；如果内容不足，请明确说明缺口，不要编造。
+如果上下文中出现产品链接/Product URL/链接字段，最终回答必须保留这些网址，尤其是产品推荐、报价、材料说明和产品对比场景。
+""");
+            enhanced.append(ragContext.context());
+            enhanced.append("\n\n回答时请自然引用上述事实，不要泄露内部 chunk 格式。\n");
+        }
+
         // v2: 注入客户上下文
         if (request.getParameters() != null
                 && request.getParameters().containsKey("customerId")) {
@@ -361,8 +532,10 @@ public class AgentRuntime {
             }
         }
 
-        return enhanced.toString();
+        return new EnhancedSystemPrompt(enhanced.toString(), ragContext);
     }
+
+    private record EnhancedSystemPrompt(String prompt, RAGService.RAGContext ragContext) {}
 
     private String ensureSession(String sessionId, String operationType) {
         if (sessionId != null && conversationManager.sessionExists(sessionId)) {

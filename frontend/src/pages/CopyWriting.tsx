@@ -7,16 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import {
-  PenTool,
-  Loader2,
-  Copy,
-  Sparkles,
-  Globe,
-  ShoppingCart,
-  Linkedin,
-  Mail,
-} from "lucide-react"
+import { PenTool, Loader2, Copy, Sparkles } from "lucide-react"
 import api from "@/lib/api"
 
 const platforms = [
@@ -68,14 +59,17 @@ export default function CopyWriting() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">文案 & 询盘回复</h1>
-          <p className="mt-1 text-sm text-muted-foreground">AI 多平台文案生成 · 询盘自动回复</p>
+      <div className="page-hero p-5 sm:p-6">
+        <div className="relative z-[1] flex items-center justify-between gap-4">
+          <div>
+            <div className="page-kicker">EXPORT COPY AGENT</div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground">文案 & 询盘回复</h1>
+            <p className="mt-2 text-sm text-muted-foreground">AI 多平台文案生成，面向 Alibaba、官网和邮件场景快速生成外贸表达。</p>
+          </div>
+          <Badge variant="purple" className="text-[11px]">
+            <Sparkles size={11} /> AI 写作
+          </Badge>
         </div>
-        <Badge variant="purple" className="text-[11px]">
-          <Sparkles size={11} /> AI 写作
-        </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -190,7 +184,7 @@ export default function CopyWriting() {
           </CardHeader>
           <CardContent>
             {result ? (
-              <div className="rounded-[14px] bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
+              <div className="trade-signal-card p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[300px]">
                 {result}
               </div>
             ) : (

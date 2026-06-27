@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+﻿import { useState, useRef, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,11 +7,13 @@ import {
   Send, User, Loader2, Trash2, Sparkles,
   Globe, Search, BarChart3, PenTool,
   Wand2, FileText, XCircle, Zap, Paperclip, Camera,
+  Database, MessageCircle,
 } from "lucide-react"
 import api from "@/lib/api"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
 import ImageViewer from "@/components/chat/ImageViewer"
+import CompanyLogoMark from "@/components/brand/CompanyLogoMark"
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -25,13 +27,22 @@ interface ToolCall {
   durationMs?: number
 }
 
+interface RagCitation {
+  rank: number
+  source: string
+  score: number
+  snippet: string
+}
+
 interface Message {
   id: string
   role: "user" | "assistant" | "system"
   content: string
   timestamp: string
-  model?: string
+  agentLabel?: string
   toolCalls?: ToolCall[]
+  ragUsed?: boolean
+  ragCitations?: RagCitation[]
   images?: string[]
   isStreaming?: boolean
 }
@@ -55,17 +66,19 @@ const quickActions = [
 // ═══════════════════════════════════════════════════════════
 
 const toolMeta: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
-  search:             { icon: <Search size={12} />,      label: "搜索",       color: "bg-blue-50 text-blue-600 border-blue-200" },
-  search_customer:    { icon: <Search size={12} />,      label: "搜索客户",    color: "bg-blue-50 text-blue-600 border-blue-200" },
-  scraper:            { icon: <Globe size={12} />,        label: "网页抓取",    color: "bg-cyan-50 text-cyan-600 border-cyan-200" },
+  search:             { icon: <Search size={12} />,      label: "搜索",       color: "bg-[#EEF7F3] text-[#1F5F53] border-[#D7E8E0]" },
+  search_customer:    { icon: <Search size={12} />,      label: "搜索客户",    color: "bg-[#EEF7F3] text-[#1F5F53] border-[#D7E8E0]" },
+  scraper:            { icon: <Globe size={12} />,        label: "网页抓取",    color: "bg-[#EEF7F3] text-[#1F5F53] border-[#D7E8E0]" },
   currency:           { icon: <BarChart3 size={12} />,   label: "汇率查询",    color: "bg-emerald-50 text-emerald-600 border-emerald-200" },
-  seo:                { icon: <BarChart3 size={12} />,   label: "SEO分析",    color: "bg-indigo-50 text-indigo-600 border-indigo-200" },
-  analyze_lead:       { icon: <BarChart3 size={12} />,   label: "询盘分析",    color: "bg-violet-50 text-violet-600 border-violet-200" },
+  seo:                { icon: <BarChart3 size={12} />,   label: "SEO分析",    color: "bg-[#F4F6F5] text-[#74766F] border-[#E4E8E5]" },
+  analyze_lead:       { icon: <BarChart3 size={12} />,   label: "询盘分析",    color: "bg-[#E9F7F5] text-[#087C78] border-[#BFE2DA]" },
   translate:          { icon: <Globe size={12} />,        label: "翻译",       color: "bg-amber-50 text-amber-600 border-amber-200" },
-  generate_email:     { icon: <PenTool size={12} />,     label: "邮件生成",    color: "bg-rose-50 text-rose-600 border-rose-200" },
-  update_customer_status: { icon: <FileText size={12} />, label: "CRM更新",  color: "bg-teal-50 text-teal-600 border-teal-200" },
-  image_understand:   { icon: <Camera size={12} />,       label: "AI识图",    color: "bg-purple-50 text-purple-600 border-purple-200" },
-  image_generate:     { icon: <Wand2 size={12} />,       label: "图片生成",    color: "bg-pink-50 text-pink-600 border-pink-200" },
+  generate_email:     { icon: <PenTool size={12} />,     label: "邮件生成",    color: "bg-amber-50 text-amber-700 border-amber-200" },
+  update_customer_status: { icon: <FileText size={12} />, label: "CRM更新",  color: "bg-[#EEF7F3] text-[#1F5F53] border-[#D7E8E0]" },
+  product_catalog_search: { icon: <Database size={12} />, label: "产品库", color: "bg-[#EEF7F3] text-[#1F5F53] border-[#D7E8E0]" },
+  wechat_control:    { icon: <MessageCircle size={12} />, label: "JC claw", color: "bg-[#E9F7F5] text-[#087C78] border-[#BFE2DA]" },
+  image_understand:   { icon: <Camera size={12} />,       label: "AI识图",    color: "bg-[#F4F6F5] text-[#343A35] border-[#E4E8E5]" },
+  image_generate:     { icon: <Wand2 size={12} />,       label: "图片生成",    color: "bg-[#E9F7F5] text-[#087C78] border-[#BFE2DA]" },
   image_edit:         { icon: <PenTool size={12} />,     label: "图片编辑",    color: "bg-orange-50 text-orange-600 border-orange-200" },
 }
 
@@ -99,6 +112,7 @@ const WELCOME_MSG: Message = {
 export default function AgentChat() {
   const [searchParams, setSearchParams] = useSearchParams()
   const sessionFromUrl = searchParams.get("session")
+  const promptFromUrl = searchParams.get("prompt")
 
   const [messages, setMessages] = useState<Message[]>([{ ...WELCOME_MSG }])
   const [input, setInput] = useState("")
@@ -126,6 +140,13 @@ export default function AgentChat() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
   }, [messages])
+
+  useEffect(() => {
+    if (!promptFromUrl || sessionFromUrl) return
+    setInput(promptFromUrl)
+    setSearchParams({}, { replace: true })
+    inputRef.current?.focus()
+  }, [promptFromUrl, sessionFromUrl, setSearchParams])
 
   // Load session from URL param — 仅在真正切换会话时加载
   useEffect(() => {
@@ -310,8 +331,10 @@ export default function AgentChat() {
       role: "assistant",
       content: data.message,
       timestamp: new Date().toLocaleTimeString(),
-      model: data.modelUsed,
+      agentLabel: "JC agent",
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      ragUsed: Boolean(data.ragUsed),
+      ragCitations: Array.isArray(data.ragCitations) ? data.ragCitations : undefined,
     }])
   }
 
@@ -376,8 +399,10 @@ export default function AgentChat() {
       role: "assistant",
       content: data.message,
       timestamp: new Date().toLocaleTimeString(),
-      model: data.modelUsed,
+      agentLabel: "JC agent",
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      ragUsed: Boolean(data.ragUsed),
+      ragCitations: Array.isArray(data.ragCitations) ? data.ragCitations : undefined,
     }])
   }
 
@@ -407,13 +432,13 @@ export default function AgentChat() {
       onDragOver={e => e.preventDefault()}
     >
       {/* ══ Main Chat ══ */}
-      <div className="flex-1 min-w-0 flex flex-col rounded-xl border border-border bg-white overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col rounded-[16px] border border-[#E4E8E5] bg-[#FFFFFF] overflow-hidden shadow-[0_10px_28px_-26px_rgba(15,23,42,0.16)]">
         {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between px-5 py-2.5 border-b border-border">
+        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-[#E4E8E5] bg-[#FFFFFF]">
           <div className="flex items-center gap-2 min-w-0">
-            <Sparkles size={15} className="text-amber-500 flex-shrink-0" />
-            <span className="text-sm font-semibold text-foreground truncate">AI Agent</span>
-            <span className="text-[10px] text-muted-foreground hidden sm:inline truncate">· 一句话驱动所有AI能力</span>
+            <Sparkles size={15} className="text-[#1F5F53] flex-shrink-0" />
+            <span className="text-sm font-black text-[#171916] truncate">AI Agent</span>
+            <span className="text-[10px] text-[#74766F] hidden sm:inline truncate">· 一句话驱动所有 AI 能力</span>
           </div>
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearChat}>
             <Trash2 size={13} /> 清空
@@ -425,15 +450,15 @@ export default function AgentChat() {
           {messages.map((msg) => (
             <div key={msg.id} className={cn("flex gap-3 animate-fade-in-up", msg.role === "user" ? "justify-end" : "justify-start")}>
               {msg.role === "assistant" && (
-                <img src="/logo.png" alt="AI" className="w-8 h-8 rounded-[10px] object-cover flex-shrink-0 mt-1" />
+                <CompanyLogoMark className="mt-1 h-8 w-10 flex-shrink-0" decorative />
               )}
               <div className={cn("max-w-[80%] min-w-0", msg.role === "user" ? "order-[-1]" : "")}>
                 {msg.role === "user" && (
-                  <div className="bg-muted rounded-[16px] rounded-br-[6px] px-4 py-3 text-sm">
+                  <div className="rounded-[14px] rounded-br-[5px] border border-[#D7E8E0] bg-[#EEF7F3] px-4 py-3 text-sm text-[#171916]">
                     {msg.images && msg.images.length > 0 && (
                       <div className="flex gap-2 mb-2 flex-wrap">
                         {msg.images.map((src, i) => (
-                          <img key={i} src={src} alt={`upload-${i}`} className="w-20 h-20 object-cover rounded-lg" />
+                          <img key={i} src={src} alt={`upload-${i}`} className="w-20 h-20 object-cover rounded-[10px]" />
                         ))}
                       </div>
                     )}
@@ -442,7 +467,7 @@ export default function AgentChat() {
                 )}
 
                 {msg.role === "assistant" && (
-                  <div className="bg-muted rounded-[16px] rounded-bl-[6px] px-4 py-3 text-sm">
+                  <div className="rounded-[14px] rounded-bl-[5px] border border-[#E4E8E5] bg-[#FFFFFF] px-4 py-3 text-sm shadow-none">
                     <div className="prose prose-sm max-w-none">
                       <ReactMarkdown
                         components={{
@@ -450,7 +475,7 @@ export default function AgentChat() {
                             <img
                               src={src}
                               alt={alt || ""}
-                              className="rounded-lg max-w-full max-h-[400px] object-contain my-2 cursor-zoom-in hover:opacity-90 transition-opacity border border-border/50"
+                              className="rounded-[10px] max-w-full max-h-[400px] object-contain my-2 cursor-zoom-in hover:opacity-90 transition-opacity border border-border/50"
                               loading="lazy"
                               onClick={() => setLightbox({ src: src || "", prompt: alt || "" })}
                             />
@@ -473,9 +498,9 @@ export default function AgentChat() {
                         </div>
                         <div className="space-y-1">
                           {msg.toolCalls.map((tc, i) => {
-                            const meta = toolMeta[tc.toolName] || { icon: <Zap size={12} />, label: tc.toolName, color: "bg-slate-50 text-slate-600 border-slate-200" }
+                            const meta = toolMeta[tc.toolName] || { icon: <Zap size={12} />, label: tc.toolName, color: "bg-[#F4F6F5] text-[#74766F] border-[#E4E8E5]" }
                             return (
-                              <div key={i} className={cn("flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px]", meta.color)}>
+                              <div key={i} className={cn("flex items-center gap-2 px-2.5 py-1.5 rounded-[10px] border text-[11px]", meta.color)}>
                                 {meta.icon}
                                 <span className="font-medium">{meta.label}</span>
                                 {tc.durationMs !== undefined && <span className="text-[10px] opacity-60 ml-auto">{tc.durationMs}ms</span>}
@@ -487,15 +512,41 @@ export default function AgentChat() {
                       </div>
                     )}
 
+                    {msg.ragUsed && msg.ragCitations && msg.ragCitations.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border/50">
+                        <div className="mb-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Database size={10} /> 知识库引用 ({msg.ragCitations.length})
+                        </div>
+                        <div className="space-y-1.5">
+                          {msg.ragCitations.slice(0, 4).map((citation) => (
+                            <div
+                              key={`${citation.rank}-${citation.source}`}
+                              className="rounded-[10px] border border-[#D7E8E0] bg-[#F8FBFA] px-2.5 py-2 text-[11px] text-[#343A35]"
+                            >
+                              <div className="mb-1 flex items-center justify-between gap-2">
+                                <span className="font-bold text-[#1F5F53]">
+                                  #{citation.rank} {citation.source}
+                                </span>
+                                <span className="font-mono text-[10px] text-[#74766F]">
+                                  {(Number(citation.score || 0) * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                              <p className="line-clamp-2 text-[#74766F]">{citation.snippet}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-[10px] opacity-40">{msg.timestamp}</span>
-                      {msg.model && <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4">{msg.model}</Badge>}
+                      {msg.agentLabel && <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4">{msg.agentLabel}</Badge>}
                     </div>
                   </div>
                 )}
               </div>
               {msg.role === "user" && (
-                <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0 mt-1">
+                <div className="w-8 h-8 rounded-[10px] bg-[#171916] flex items-center justify-center flex-shrink-0 mt-1 shadow-none">
                   <User size={15} className="text-white" />
                 </div>
               )}
@@ -504,8 +555,8 @@ export default function AgentChat() {
 
           {loading && (
             <div className="flex gap-3 animate-fade-in">
-              <img src="/logo.png" alt="AI" className="w-8 h-8 rounded-[10px] object-cover flex-shrink-0 mt-1" />
-              <div className="bg-muted rounded-[16px] rounded-bl-[6px] px-4 py-3">
+              <CompanyLogoMark className="mt-1 h-8 w-10 flex-shrink-0" decorative />
+              <div className="rounded-[14px] rounded-bl-[5px] border border-[#E4E8E5] bg-[#FFFFFF] px-4 py-3">
                 <div className="flex gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" />
                   <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -530,7 +581,7 @@ export default function AgentChat() {
                       setTimeout(() => sendMessage(action.prompt), 100)
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-white hover:bg-muted text-[11px] text-muted-foreground transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[#E4E8E5] bg-[#FFFFFF] px-3 py-1.5 text-[11px] font-bold text-[#74766F] transition-colors hover:bg-[#F4F6F5] hover:text-[#171916]"
                 >
                   {action.icon}
                   {action.label}
@@ -543,7 +594,7 @@ export default function AgentChat() {
         {imagePreviews.length > 0 && (
           <div className="flex-shrink-0 px-4 pb-2 flex gap-2 flex-wrap">
             {imagePreviews.map((src, i) => (
-              <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden border border-border">
+              <div key={i} className="relative w-14 h-14 rounded-[10px] overflow-hidden border border-border">
                 <img src={src} alt={`preview-${i}`} className="w-full h-full object-cover" />
                 <button onClick={() => removeImage(i)} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-background border border-border flex items-center justify-center hover:bg-destructive hover:text-white transition-colors">
                   <XCircle size={10} />
@@ -553,10 +604,10 @@ export default function AgentChat() {
           </div>
         )}
 
-        <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-border">
+        <div className="flex-shrink-0 px-4 pb-4 pt-3 border-t border-[#E4E8E5] bg-[#FFFFFF]">
           <div className="flex gap-2">
             <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
-            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl flex-shrink-0" onClick={() => fileInputRef.current?.click()}>
+            <Button variant="ghost" size="icon" className="h-10 w-10 flex-shrink-0" onClick={() => fileInputRef.current?.click()}>
               <Paperclip size={18} className="text-muted-foreground" />
             </Button>
             <Input
@@ -567,9 +618,9 @@ export default function AgentChat() {
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) sendMessage() }}
               onPaste={handlePaste}
               disabled={loading}
-              className="flex-1 h-10 rounded-xl text-sm"
+              className="flex-1 h-10 text-sm"
             />
-            <Button onClick={() => sendMessage()} disabled={loading || (!input.trim() && attachedImages.length === 0)} variant="gradient" size="icon" className="h-10 w-10 rounded-xl flex-shrink-0">
+            <Button onClick={() => sendMessage()} disabled={loading || (!input.trim() && attachedImages.length === 0)} variant="gradient" size="icon" className="h-10 w-10 flex-shrink-0">
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             </Button>
           </div>

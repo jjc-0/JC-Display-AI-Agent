@@ -29,6 +29,7 @@ public class WeChatBotService {
     private static final String ILINK_BASE_URL = "https://ilinkai.weixin.qq.com";
     private static final String ILINK_APP_ID = "bot";
     private static final String ILINK_APP_CLIENT_VERSION = "132100";
+    private static final String FILE_HELPER_USER_ID = "filehelper";
 
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -49,6 +50,12 @@ public class WeChatBotService {
 
     /** fromUserId → last activity timestamp */
     private final Map<String, Long> userLastActive = new ConcurrentHashMap<>();
+
+    /** fromUserId → latest visible name or message clue */
+    private final Map<String, String> userDisplayNames = new ConcurrentHashMap<>();
+
+    /** fromUserId → latest iLink context token */
+    private final Map<String, String> userContextTokens = new ConcurrentHashMap<>();
 
     public WeChatBotService(AgentRuntime agentRuntime, ConversationManager conversationManager) {
         this.agentRuntime = agentRuntime;
@@ -87,23 +94,26 @@ public class WeChatBotService {
 
     /** 主动给微信用户发消息 (由 Agent 工具调用) */
     public boolean sendMessage(String toUserId, String text) {
-        if (!running) return false;
+        return sendMessageDetailed(toUserId, text).success();
+    }
+
+    /** 主动给微信用户发消息并返回 iLink 的真实执行结果 */
+    public SendResult sendMessageDetailed(String toUserId, String text) {
+        if (!running) return SendResult.failed(toUserId, "微信 Bot 未运行", Map.of());
         try {
             // 查找该用户的 contextToken (从最近消息中获取)
             String sessionId = userSessions.get(toUserId);
             String contextToken = null;
-            if (sessionId != null) {
-                var history = conversationManager.getDBHistory(sessionId);
-                if (history != null && !history.isEmpty()) {
-                    contextToken = history.get(history.size() - 1).getContent();
-                }
+            if (FILE_HELPER_USER_ID.equalsIgnoreCase(toUserId)) {
+                contextToken = null;
+            } else if (sessionId != null) {
+                contextToken = userContextTokens.get(toUserId);
             }
 
-            sendIlinkMessage(toUserId, text, contextToken);
-            return true;
+            return sendIlinkMessage(toUserId, text, contextToken);
         } catch (Exception e) {
             log.error("微信发送失败 to={}: {}", toUserId, e.getMessage());
-            return false;
+            return SendResult.failed(toUserId, e.getMessage(), Map.of());
         }
     }
 
@@ -116,6 +126,7 @@ public class WeChatBotService {
             String uid = entry.getKey();
             Map<String, Object> u = new LinkedHashMap<>();
             u.put("user_id", uid);
+            u.put("display_name", userDisplayNames.getOrDefault(uid, uid));
             u.put("last_active", entry.getValue());
             u.put("minutes_ago", (now - entry.getValue()) / 60000);
 
@@ -131,6 +142,28 @@ public class WeChatBotService {
                 (Long) b.getOrDefault("last_active", 0L),
                 (Long) a.getOrDefault("last_active", 0L)));
         return users;
+    }
+
+    /** 按用户 ID、昵称、备注或最近消息线索匹配微信用户 */
+    public Optional<Map<String, Object>> findUser(String keyword) {
+        if (keyword == null || keyword.isBlank()) return Optional.empty();
+        String kw = keyword.toLowerCase(Locale.ROOT).trim();
+        if (isFileHelperKeyword(kw)) {
+            Map<String, Object> user = new LinkedHashMap<>();
+            user.put("user_id", FILE_HELPER_USER_ID);
+            user.put("display_name", "文件传输助手");
+            user.put("system_contact", true);
+            user.put("minutes_ago", 0L);
+            return Optional.of(user);
+        }
+        return getActiveUsers().stream()
+                .filter(user -> {
+                    String userId = String.valueOf(user.getOrDefault("user_id", "")).toLowerCase(Locale.ROOT);
+                    String displayName = String.valueOf(user.getOrDefault("display_name", "")).toLowerCase(Locale.ROOT);
+                    return !displayName.isBlank()
+                            && (userId.contains(kw) || displayName.contains(kw) || kw.contains(displayName));
+                })
+                .findFirst();
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -207,6 +240,10 @@ public class WeChatBotService {
 
             String contextToken = toString(msg.get("context_token"));
             userLastActive.put(fromUserId, System.currentTimeMillis());
+            if (!contextToken.isBlank()) {
+                userContextTokens.put(fromUserId, contextToken);
+            }
+            captureUserDisplayName(fromUserId, msg, text);
 
             // 获取 typing_ticket
             if (typingTicket == null && ilinkUserId != null && !ilinkUserId.isBlank()
@@ -235,7 +272,10 @@ public class WeChatBotService {
                 if (reply == null || reply.isBlank()) reply = "智能体暂无响应";
 
                 log.info("[微信回复] {}", reply.substring(0, Math.min(80, reply.length())));
-                sendIlinkMessage(fromUserId, reply, contextToken);
+                SendResult sendResult = sendIlinkMessage(fromUserId, reply, contextToken);
+                if (!sendResult.success()) {
+                    log.warn("[微信回复发送失败] to={} error={}", fromUserId, sendResult.error());
+                }
             } finally {
                 sendTyping(false);
             }
@@ -249,7 +289,7 @@ public class WeChatBotService {
     // iLink API 通信
     // ═══════════════════════════════════════════════════════════════
 
-    private void sendIlinkMessage(String toUserId, String text, String contextToken) throws Exception {
+    private SendResult sendIlinkMessage(String toUserId, String text, String contextToken) throws Exception {
         Map<String, Object> textItem = new LinkedHashMap<>();
         textItem.put("type", 1);
         textItem.put("text_item", Map.of("text", text));
@@ -271,12 +311,72 @@ public class WeChatBotService {
 
         HttpRequest req = request("ilink/bot/sendmessage", body, 15);
         HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        Map<String, Object> responseBody = parseResponseBody(resp.body());
         if (resp.statusCode() != 200) {
             log.warn("[sendmessage] HTTP {} : {}", resp.statusCode(),
                     resp.body().substring(0, Math.min(200, resp.body().length())));
+            return SendResult.failed(toUserId, "iLink HTTP " + resp.statusCode(), responseBody);
+        }
+
+        Object errcode = responseBody.get("errcode");
+        Object ret = responseBody.get("ret");
+        boolean ok = isZeroOrMissing(errcode) && isZeroOrMissing(ret);
+        if (!ok) {
+            String error = String.valueOf(responseBody.getOrDefault("errmsg",
+                    responseBody.getOrDefault("error", "iLink 返回发送失败")));
+            log.warn("[sendmessage] failed to={} ret={} errcode={} body={}", toUserId, ret, errcode, responseBody);
+            return SendResult.failed(toUserId, error, responseBody);
         } else {
             log.info("[微信发送成功] {}", text.substring(0, Math.min(50, text.length())));
+            return SendResult.success(toUserId, responseBody);
         }
+    }
+
+    private void captureUserDisplayName(String fromUserId, Map<String, Object> msg, String text) {
+        List<String> candidates = new ArrayList<>();
+        collectString(candidates, msg.get("from_user_name"));
+        collectString(candidates, msg.get("from_nickname"));
+        collectString(candidates, msg.get("nickname"));
+        collectString(candidates, msg.get("remark"));
+        collectString(candidates, msg.get("sender_name"));
+        collectString(candidates, msg.get("display_name"));
+
+        for (String candidate : candidates) {
+            if (!candidate.isBlank() && !candidate.equals(fromUserId)) {
+                userDisplayNames.put(fromUserId, candidate);
+                return;
+            }
+        }
+    }
+
+    private void collectString(List<String> values, Object value) {
+        if (value instanceof String s && !s.isBlank()) {
+            values.add(s.trim());
+        }
+    }
+
+    private boolean isFileHelperKeyword(String keyword) {
+        String normalized = keyword.replace(" ", "");
+        return normalized.contains("文件传输助手")
+                || normalized.contains("filehelper")
+                || normalized.contains("filetransfer");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseResponseBody(String body) {
+        if (body == null || body.isBlank()) return Map.of();
+        try {
+            return objectMapper.readValue(body, Map.class);
+        } catch (Exception e) {
+            return Map.of("raw", body);
+        }
+    }
+
+    private boolean isZeroOrMissing(Object value) {
+        if (value == null) return true;
+        if (value instanceof Number n) return n.intValue() == 0;
+        if (value instanceof String s) return s.isBlank() || "0".equals(s);
+        return false;
     }
 
     private void fetchTypingTicket(String contextToken) {
@@ -360,5 +460,15 @@ public class WeChatBotService {
 
     private static String toString(Object o) {
         return o instanceof String s ? s : o != null ? o.toString() : "";
+    }
+
+    public record SendResult(boolean success, String toUserId, String error, Map<String, Object> rawResponse) {
+        static SendResult success(String toUserId, Map<String, Object> rawResponse) {
+            return new SendResult(true, toUserId, null, rawResponse);
+        }
+
+        static SendResult failed(String toUserId, String error, Map<String, Object> rawResponse) {
+            return new SendResult(false, toUserId, error, rawResponse);
+        }
     }
 }
