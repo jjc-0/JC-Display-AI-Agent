@@ -178,7 +178,11 @@ public class AgentController {
 
     @PutMapping("/session/{sessionId}/title")
     public ResponseEntity<Map<String, Object>> updateTitle(@PathVariable String sessionId,
-                                                            @RequestBody Map<String, String> body) {
+                                                            @RequestBody Map<String, String> body,
+                                                            Authentication authentication) {
+        if (!conversationManager.isSessionOwnedBy(sessionId, currentUsername(authentication)) && !isAdmin(authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权修改该对话标题"));
+        }
         conversationManager.updateSessionTitle(sessionId, body.get("title"));
         return ResponseEntity.ok(Map.of("success", true));
     }
@@ -561,5 +565,10 @@ public class AgentController {
 
     private String currentUsername(Authentication authentication) {
         return authentication != null ? authentication.getName() : "user";
+    }
+
+    private boolean isAdmin(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 }
