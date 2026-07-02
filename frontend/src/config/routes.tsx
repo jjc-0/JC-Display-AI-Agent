@@ -14,6 +14,7 @@ const CopyWriting = lazy(() => import("@/pages/CopyWriting"))
 const Dashboard = lazy(() => import("@/pages/Dashboard"))
 const ImageRecognition = lazy(() => import("@/pages/ImageRecognition"))
 const InquiryScoring = lazy(() => import("@/pages/InquiryScoring"))
+const InquiryReview = lazy(() => import("@/pages/InquiryReview"))
 const JCClaw = lazy(() => import("@/pages/JCClaw"))
 const KnowledgeBase = lazy(() => import("@/pages/KnowledgeBase"))
 const ProductImage = lazy(() => import("@/pages/ProductImage"))
@@ -37,6 +38,7 @@ export const protectedRoutes: AppRoute[] = [
   { path: "agent-execution", element: <AgentExecutionCenter />, roles: ["admin"] },
   { path: "admin/conversations", element: <AdminConversations />, roles: ["admin"] },
   { path: "inquiry", element: <InquiryScoring /> },
+  { path: "inquiry-review", element: <InquiryReview /> },
   { path: "copywriting", element: <CopyWriting /> },
   { path: "translate", element: <Translate /> },
   { path: "analysis", element: <Analysis /> },

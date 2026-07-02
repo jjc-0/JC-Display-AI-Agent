@@ -4,6 +4,7 @@ import {
   Cog,
   Database,
   FileText,
+  FolderSearch,
   Home,
   Landmark,
   MessageSquare,
@@ -34,6 +35,7 @@ export const navigation: NavGroup[] = [
     items: [
       { href: "/agent-chat", label: "AI Agent 对话", icon: <MessageSquare size={17} />, badge: "AI", badgeVariant: "purple" },
       { href: "/trade-workspace", label: "外贸工作台", icon: <Landmark size={17} />, badge: "B2B", badgeVariant: "success" },
+      { href: "/inquiry-review", label: "询盘资料审查", icon: <FolderSearch size={17} />, badge: "2.0", badgeVariant: "success" },
       { href: "/agent-square", label: "智能体广场", icon: <Bot size={17} /> },
       { href: "/templates", label: "Prompt 模板", icon: <FileText size={17} /> },
       { href: "/workflow", label: "工作流", icon: <PackageCheck size={17} />, badge: "DAG", badgeVariant: "blue" },

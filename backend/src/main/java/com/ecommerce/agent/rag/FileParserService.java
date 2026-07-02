@@ -3,6 +3,8 @@ package com.ecommerce.agent.rag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.tika.Tika;
@@ -37,6 +39,8 @@ public class FileParserService {
 
         if (mimeType != null && mimeType.equals("application/pdf")) {
             text = parsePdf(bytes, fileName);
+        } else if (isSpreadsheet(mimeType, fileName)) {
+            text = parseSpreadsheet(bytes, fileName);
         } else if (mimeType != null && (mimeType.contains("officedocument") ||
                 fileName.toLowerCase().endsWith(".docx"))) {
             text = parseDocx(bytes, fileName);
@@ -88,10 +92,53 @@ public class FileParserService {
         }
     }
 
+    private String parseSpreadsheet(byte[] bytes, String fileName) throws IOException {
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+            DataFormatter formatter = new DataFormatter();
+            StringBuilder sb = new StringBuilder();
+
+            workbook.forEach(sheet -> {
+                sb.append("Sheet: ").append(sheet.getSheetName()).append("\n");
+                int lastRow = sheet.getLastRowNum();
+                for (int rowIndex = 0; rowIndex <= lastRow; rowIndex++) {
+                    var row = sheet.getRow(rowIndex);
+                    if (row == null) continue;
+                    short lastCell = row.getLastCellNum();
+                    if (lastCell <= 0) continue;
+
+                    StringBuilder line = new StringBuilder();
+                    for (int cellIndex = 0; cellIndex < lastCell; cellIndex++) {
+                        var cell = row.getCell(cellIndex);
+                        String value = cell != null ? formatter.formatCellValue(cell).trim() : "";
+                        if (cellIndex > 0) line.append(" | ");
+                        line.append(value);
+                    }
+                    String rowText = line.toString().replaceAll("(\\s*\\|\\s*)+$", "").trim();
+                    if (!rowText.isBlank()) {
+                        sb.append(rowText).append("\n");
+                    }
+                }
+                sb.append("\n");
+            });
+
+            log.info("Excel解析完成: {}, {} 字符", fileName, sb.length());
+            return sb.toString();
+        }
+    }
+
     private String parseText(byte[] bytes, String fileName) {
         String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         log.info("文本解析完成: {}, {} 字符", fileName, text.length());
         return text;
+    }
+
+    private boolean isSpreadsheet(String mimeType, String fileName) {
+        String mime = mimeType != null ? mimeType.toLowerCase() : "";
+        String lowerName = fileName != null ? fileName.toLowerCase() : "";
+        return mime.contains("spreadsheet")
+                || mime.contains("excel")
+                || lowerName.endsWith(".xlsx")
+                || lowerName.endsWith(".xls");
     }
 
     /**
