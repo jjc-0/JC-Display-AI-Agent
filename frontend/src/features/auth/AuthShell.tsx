@@ -38,10 +38,10 @@ export default function AuthShell({ eyebrow, title, description, children, foote
   }, [])
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-[#F7FAF8] text-[#171916]">
+    <main className="relative min-h-[100dvh] overflow-hidden bg-transparent text-[#171916]">
       {showSplash && <SplashIntro />}
       <div className="pointer-events-none absolute inset-0 login-grid-bg" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[46dvh] bg-[linear-gradient(135deg,rgba(4,139,202,0.10),rgba(248,251,250,0.78)_44%,rgba(20,148,73,0.10))]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[46dvh] bg-[linear-gradient(135deg,rgba(4,139,202,0.06),rgba(248,251,250,0.38)_44%,rgba(20,148,73,0.06))]" />
       <LoginAtmosphere />
 
       <div className="relative mx-auto grid min-h-[100dvh] w-full max-w-[1320px] grid-cols-1 gap-8 px-4 py-5 md:grid-cols-[minmax(0,0.95fr)_minmax(420px,0.78fr)] md:px-8 lg:px-10">
