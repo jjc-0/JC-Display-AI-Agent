@@ -48,6 +48,71 @@ public class InquiryReviewService {
         return cases.stream().map(this::toCaseSummaryMap).toList();
     }
 
+    public Map<String, Object> workspaceSummary(String ownerId, boolean admin) {
+        List<InquiryCase> cases = admin ? caseRepo.findAllByOrderByUpdatedAtDesc() : caseRepo.findByOwnerIdOrderByUpdatedAtDesc(ownerId);
+        Map<String, Long> funnel = new LinkedHashMap<>();
+        for (String status : List.of("DRAFT", "REVIEWING", "WAITING_CUSTOMER", "READY_TO_QUOTE", "CLOSED")) {
+            funnel.put(status, 0L);
+        }
+
+        List<Map<String, Object>> todos = new ArrayList<>();
+        for (InquiryCase item : cases) {
+            funnel.merge(item.getStatus(), 1L, Long::sum);
+            long artifactCount = artifactRepo.countByCaseIdAndParseStatus(item.getId(), "SUCCESS");
+            long requirementCount = requirementRepo.countByCaseId(item.getId());
+            long missingCount = missingFieldRepo.countByCaseId(item.getId());
+            long highMissingCount = missingFieldRepo.countByCaseIdAndPriority(item.getId(), "HIGH");
+            long riskCount = riskFlagRepo.countByCaseId(item.getId());
+            long highRiskCount = riskFlagRepo.countByCaseIdAndLevel(item.getId(), "HIGH");
+            Optional<QuoteTaskDraft> draft = quoteTaskDraftRepo.findByCaseId(item.getId());
+            int readiness = draft.map(this::quoteReadiness).orElse(0);
+
+            if (artifactCount > 0 && requirementCount == 0) {
+                todos.add(todo(item, "ANALYZE", "HIGH", "资料已归档，尚未 AI 审查", "开始 AI 审查，生成结构化需求和追问清单"));
+            }
+            if (missingCount > 0) {
+                todos.add(todo(item, "ASK_CUSTOMER", highMissingCount > 0 ? "HIGH" : "MEDIUM",
+                        "存在 " + missingCount + " 个待确认字段",
+                        "检查英文追问邮件，把案件推进到待客户确认"));
+            }
+            if (riskCount > 0) {
+                todos.add(todo(item, "HANDLE_RISK", highRiskCount > 0 ? "HIGH" : "MEDIUM",
+                        "存在 " + riskCount + " 个报价风险",
+                        "先和工程、采购或经理确认风险处理方式"));
+            }
+            if (draft.isPresent() && !"CREATED".equals(draft.get().getStatus()) && !"READY_TO_QUOTE".equals(item.getStatus())) {
+                todos.add(todo(item, "CREATE_TASK", "MEDIUM", "内部报价任务单尚未下发", "确认任务单后创建内部任务"));
+            }
+            if (draft.isPresent() && requirementCount > 0 && readiness < 70) {
+                todos.add(todo(item, "PREPARE_QUOTE", "MEDIUM",
+                        "报价准备包完整度 " + readiness + "%",
+                        "补齐 MOQ、样品费、交期、贸易条款和包装假设后再下发报价任务"));
+            }
+            if ("WAITING_CUSTOMER".equals(item.getStatus())) {
+                LocalDateTime nextFollowUpAt = draft.map(QuoteTaskDraft::getNextFollowUpAt).orElse(null);
+                boolean overdue = nextFollowUpAt != null && !nextFollowUpAt.isAfter(LocalDateTime.now());
+                boolean stale = nextFollowUpAt == null && item.getUpdatedAt() != null && item.getUpdatedAt().isBefore(LocalDateTime.now().minusDays(2));
+                todos.add(todo(item, "FOLLOW_UP", overdue ? "HIGH" : stale ? "MEDIUM" : "LOW",
+                        overdue ? "客户跟进已到期" : "案件处于待客户确认",
+                        nextFollowUpAt != null
+                                ? "下次跟进时间: " + nextFollowUpAt
+                                : "检查客户是否回复，必要时发送跟进提醒"));
+            }
+        }
+
+        todos.sort(Comparator
+                .comparingInt((Map<String, Object> item) -> priorityRank((String) item.get("priority")))
+                .thenComparing(item -> (String) item.get("updatedAt"), Comparator.reverseOrder()));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("funnel", funnel);
+        result.put("todos", todos.stream().limit(20).toList());
+        result.put("totalCases", cases.size());
+        result.put("openCases", cases.stream().filter(item -> !"CLOSED".equals(item.getStatus())).count());
+        result.put("highPriorityTodos", todos.stream().filter(item -> "HIGH".equals(item.get("priority"))).count());
+        return result;
+    }
+
     @Transactional
     public Map<String, Object> createCase(Map<String, Object> body, String ownerId, String ownerName) {
         String title = stringValue(body.get("title"));
@@ -374,6 +439,18 @@ public class InquiryReviewService {
 
                 风险摘要:
                 %s
+
+                报价准备包:
+                - 产品/规格摘要: %s
+                - 报价假设: %s
+                - MOQ: %s
+                - 样品费: %s
+                - 样品交期: %s
+                - 大货交期: %s
+                - 贸易条款: %s
+                - 目的港: %s
+                - 付款条款: %s
+                - 包装要求: %s
                 """.formatted(
                 inquiryCase.getCaseNo(),
                 nullToEmpty(inquiryCase.getCustomerName()),
@@ -382,7 +459,17 @@ public class InquiryReviewService {
                 nullToEmpty(inquiryCase.getCountry()),
                 nullToEmpty(draft.getKnownInfo()),
                 nullToEmpty(draft.getMissingInfo()),
-                nullToEmpty(draft.getRiskSummary())
+                nullToEmpty(draft.getRiskSummary()),
+                nullToEmpty(draft.getProductSummary()),
+                nullToEmpty(draft.getQuoteAssumptions()),
+                nullToEmpty(draft.getMoq()),
+                nullToEmpty(draft.getSampleFee()),
+                nullToEmpty(draft.getSampleLeadTime()),
+                nullToEmpty(draft.getMassProductionLeadTime()),
+                nullToEmpty(draft.getTradeTerm()),
+                nullToEmpty(draft.getDestinationPort()),
+                nullToEmpty(draft.getPaymentTerm()),
+                nullToEmpty(draft.getPackagingRequirement())
         );
 
         Map<String, Object> context = new LinkedHashMap<>();
@@ -391,6 +478,9 @@ public class InquiryReviewService {
         context.put("customerName", inquiryCase.getCustomerName());
         context.put("contactEmail", inquiryCase.getContactEmail());
         context.put("assigneeRole", draft.getAssigneeRole());
+        context.put("quoteReadiness", quoteReadiness(draft));
+        context.put("sampleLeadTime", draft.getSampleLeadTime());
+        context.put("massProductionLeadTime", draft.getMassProductionLeadTime());
 
         AgentTask task = AgentTask.builder()
                 .userId(ownerId != null && !ownerId.isBlank() ? ownerId : inquiryCase.getOwnerId())
@@ -439,12 +529,59 @@ public class InquiryReviewService {
         if (body.containsKey("knownInfo")) draft.setKnownInfo(stringValue(body.get("knownInfo")));
         if (body.containsKey("missingInfo")) draft.setMissingInfo(stringValue(body.get("missingInfo")));
         if (body.containsKey("riskSummary")) draft.setRiskSummary(stringValue(body.get("riskSummary")));
+        if (body.containsKey("quoteAssumptions")) draft.setQuoteAssumptions(stringValue(body.get("quoteAssumptions")));
+        if (body.containsKey("productSummary")) draft.setProductSummary(stringValue(body.get("productSummary")));
+        if (body.containsKey("moq")) draft.setMoq(trimTo(stringValue(body.get("moq")), 120));
+        if (body.containsKey("sampleFee")) draft.setSampleFee(trimTo(stringValue(body.get("sampleFee")), 120));
+        if (body.containsKey("sampleLeadTime")) draft.setSampleLeadTime(trimTo(stringValue(body.get("sampleLeadTime")), 120));
+        if (body.containsKey("massProductionLeadTime")) draft.setMassProductionLeadTime(trimTo(stringValue(body.get("massProductionLeadTime")), 120));
+        if (body.containsKey("tradeTerm")) draft.setTradeTerm(trimTo(stringValue(body.get("tradeTerm")), 120));
+        if (body.containsKey("destinationPort")) draft.setDestinationPort(trimTo(stringValue(body.get("destinationPort")), 160));
+        if (body.containsKey("paymentTerm")) draft.setPaymentTerm(trimTo(stringValue(body.get("paymentTerm")), 160));
+        if (body.containsKey("packagingRequirement")) draft.setPackagingRequirement(stringValue(body.get("packagingRequirement")));
+        if (body.containsKey("followUpPlan")) draft.setFollowUpPlan(stringValue(body.get("followUpPlan")));
+        if (body.containsKey("nextFollowUpAt")) draft.setNextFollowUpAt(parseDateTime(stringValue(body.get("nextFollowUpAt"))));
         if (body.containsKey("assigneeRole")) draft.setAssigneeRole(trimTo(stringValue(body.get("assigneeRole")), 40));
         if (body.containsKey("status")) draft.setStatus(trimTo(stringValue(body.get("status")), 20));
         if (body.containsKey("emailDraft")) draft.setEmailDraft(stringValue(body.get("emailDraft")));
         draft = quoteTaskDraftRepo.save(draft);
         touchCase(caseId);
         return toQuoteTaskDraftMap(draft);
+    }
+
+    @Transactional
+    public Map<String, Object> markCustomerAsked(Long caseId, Map<String, Object> body) {
+        InquiryCase inquiryCase = getCaseOrThrow(caseId);
+        QuoteTaskDraft draft = quoteTaskDraftRepo.findByCaseId(caseId).orElseGet(() ->
+                QuoteTaskDraft.builder()
+                        .caseId(caseId)
+                        .taskTitle("内部报价任务")
+                        .status("DRAFT")
+                        .build()
+        );
+        String emailDraft = stringValue(body.get("emailDraft"));
+        if (emailDraft != null) {
+            draft.setEmailDraft(emailDraft);
+        }
+        String followUpPlan = stringValue(body.get("followUpPlan"));
+        if (followUpPlan != null) {
+            draft.setFollowUpPlan(followUpPlan);
+        }
+        LocalDateTime nextFollowUpAt = parseDateTime(stringValue(body.get("nextFollowUpAt")));
+        draft.setNextFollowUpAt(nextFollowUpAt != null ? nextFollowUpAt : LocalDateTime.now().plusDays(2));
+        draft = quoteTaskDraftRepo.save(draft);
+
+        String sentText = emailDraft != null && !emailDraft.isBlank()
+                ? emailDraft
+                : "已向客户追问报价前缺失信息。";
+        addTextArtifact(caseId, "客户追问记录", "FOLLOW_UP", "SALES_NOTE", sentText);
+        inquiryCase.setStatus("WAITING_CUSTOMER");
+        caseRepo.save(inquiryCase);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("case", toCaseSummaryMap(inquiryCase));
+        result.put("quoteTaskDraft", toQuoteTaskDraftMap(draft));
+        return result;
     }
 
     @Transactional
@@ -551,6 +688,17 @@ public class InquiryReviewService {
                     "knownInfo": "已知信息",
                     "missingInfo": "缺失信息",
                     "riskSummary": "风险摘要",
+                    "quoteAssumptions": "报价假设，只能写需要内部确认或待确认的假设，不能编造最终价格",
+                    "productSummary": "产品/规格摘要",
+                    "moq": "MOQ，未知则写待确认",
+                    "sampleFee": "样品费，未知则写待确认",
+                    "sampleLeadTime": "样品交期，未知则写待确认",
+                    "massProductionLeadTime": "大货交期，未知则写待确认",
+                    "tradeTerm": "贸易条款，未知则写待确认",
+                    "destinationPort": "目的港，未知则写待确认",
+                    "paymentTerm": "付款条款，未知则写待确认",
+                    "packagingRequirement": "包装要求",
+                    "followUpPlan": "后续跟进计划",
                     "assigneeRole": "SALES | ENGINEERING | PURCHASING | MANAGER"
                   }
                 }
@@ -647,6 +795,17 @@ public class InquiryReviewService {
             draft.setKnownInfo(internalTask.path("knownInfo").asText(nullToEmpty(draft.getKnownInfo())));
             draft.setMissingInfo(internalTask.path("missingInfo").asText(nullToEmpty(draft.getMissingInfo())));
             draft.setRiskSummary(internalTask.path("riskSummary").asText(nullToEmpty(draft.getRiskSummary())));
+            draft.setQuoteAssumptions(internalTask.path("quoteAssumptions").asText(nullToEmpty(draft.getQuoteAssumptions())));
+            draft.setProductSummary(internalTask.path("productSummary").asText(nullToEmpty(draft.getProductSummary())));
+            draft.setMoq(trimTo(internalTask.path("moq").asText(nullToEmpty(draft.getMoq())), 120));
+            draft.setSampleFee(trimTo(internalTask.path("sampleFee").asText(nullToEmpty(draft.getSampleFee())), 120));
+            draft.setSampleLeadTime(trimTo(internalTask.path("sampleLeadTime").asText(nullToEmpty(draft.getSampleLeadTime())), 120));
+            draft.setMassProductionLeadTime(trimTo(internalTask.path("massProductionLeadTime").asText(nullToEmpty(draft.getMassProductionLeadTime())), 120));
+            draft.setTradeTerm(trimTo(internalTask.path("tradeTerm").asText(nullToEmpty(draft.getTradeTerm())), 120));
+            draft.setDestinationPort(trimTo(internalTask.path("destinationPort").asText(nullToEmpty(draft.getDestinationPort())), 160));
+            draft.setPaymentTerm(trimTo(internalTask.path("paymentTerm").asText(nullToEmpty(draft.getPaymentTerm())), 160));
+            draft.setPackagingRequirement(internalTask.path("packagingRequirement").asText(nullToEmpty(draft.getPackagingRequirement())));
+            draft.setFollowUpPlan(internalTask.path("followUpPlan").asText(nullToEmpty(draft.getFollowUpPlan())));
             draft.setAssigneeRole(trimTo(internalTask.path("assigneeRole").asText("SALES"), 40));
         }
         quoteTaskDraftRepo.save(draft);
@@ -724,6 +883,27 @@ public class InquiryReviewService {
         Throwable cause = e.getCause();
         String message = cause != null && cause.getMessage() != null ? cause.getMessage() : e.getMessage();
         return message != null && !message.isBlank() ? message : e.getClass().getSimpleName();
+    }
+
+    private Map<String, Object> todo(InquiryCase item, String type, String priority, String title, String action) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("caseId", item.getId());
+        m.put("caseNo", item.getCaseNo());
+        m.put("caseTitle", item.getTitle());
+        m.put("customerName", nullToEmpty(item.getCustomerName()));
+        m.put("status", item.getStatus());
+        m.put("type", type);
+        m.put("priority", priority);
+        m.put("title", title);
+        m.put("action", action);
+        m.put("updatedAt", item.getUpdatedAt() != null ? item.getUpdatedAt().toString() : "");
+        return m;
+    }
+
+    private int priorityRank(String priority) {
+        if ("HIGH".equals(priority)) return 0;
+        if ("MEDIUM".equals(priority)) return 1;
+        return 2;
     }
 
     private String limit(String value, int max) {
@@ -831,6 +1011,19 @@ public class InquiryReviewService {
         m.put("knownInfo", nullToEmpty(item.getKnownInfo()));
         m.put("missingInfo", nullToEmpty(item.getMissingInfo()));
         m.put("riskSummary", nullToEmpty(item.getRiskSummary()));
+        m.put("quoteAssumptions", nullToEmpty(item.getQuoteAssumptions()));
+        m.put("productSummary", nullToEmpty(item.getProductSummary()));
+        m.put("moq", nullToEmpty(item.getMoq()));
+        m.put("sampleFee", nullToEmpty(item.getSampleFee()));
+        m.put("sampleLeadTime", nullToEmpty(item.getSampleLeadTime()));
+        m.put("massProductionLeadTime", nullToEmpty(item.getMassProductionLeadTime()));
+        m.put("tradeTerm", nullToEmpty(item.getTradeTerm()));
+        m.put("destinationPort", nullToEmpty(item.getDestinationPort()));
+        m.put("paymentTerm", nullToEmpty(item.getPaymentTerm()));
+        m.put("packagingRequirement", nullToEmpty(item.getPackagingRequirement()));
+        m.put("followUpPlan", nullToEmpty(item.getFollowUpPlan()));
+        m.put("nextFollowUpAt", item.getNextFollowUpAt() != null ? item.getNextFollowUpAt().toString() : "");
+        m.put("quoteReadiness", quoteReadiness(item));
         m.put("assigneeRole", nullToEmpty(item.getAssigneeRole()));
         m.put("status", item.getStatus());
         m.put("emailDraft", nullToEmpty(item.getEmailDraft()));
@@ -849,6 +1042,39 @@ public class InquiryReviewService {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private int quoteReadiness(QuoteTaskDraft draft) {
+        if (draft == null) return 0;
+        List<String> values = List.of(
+                nullToEmpty(draft.getKnownInfo()),
+                nullToEmpty(draft.getProductSummary()),
+                nullToEmpty(draft.getQuoteAssumptions()),
+                nullToEmpty(draft.getMoq()),
+                nullToEmpty(draft.getSampleFee()),
+                nullToEmpty(draft.getSampleLeadTime()),
+                nullToEmpty(draft.getMassProductionLeadTime()),
+                nullToEmpty(draft.getTradeTerm()),
+                nullToEmpty(draft.getDestinationPort()),
+                nullToEmpty(draft.getPaymentTerm()),
+                nullToEmpty(draft.getPackagingRequirement())
+        );
+        long filled = values.stream().filter(value -> !value.isBlank()).count();
+        return Math.round((filled * 100f) / values.size());
+    }
+
+    private LocalDateTime parseDateTime(String value) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.trim();
+        try {
+            return LocalDateTime.parse(normalized);
+        } catch (Exception ignored) {
+            try {
+                return LocalDate.parse(normalized).atTime(9, 0);
+            } catch (Exception ignoredAgain) {
+                return null;
+            }
+        }
     }
 
     private String preview(String value, int max) {

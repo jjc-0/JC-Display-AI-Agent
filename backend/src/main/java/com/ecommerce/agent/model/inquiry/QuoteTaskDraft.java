@@ -37,6 +37,41 @@ public class QuoteTaskDraft {
     @Column(columnDefinition = "TEXT")
     private String riskSummary;
 
+    @Column(columnDefinition = "TEXT")
+    private String quoteAssumptions;
+
+    @Column(columnDefinition = "TEXT")
+    private String productSummary;
+
+    @Column(length = 120)
+    private String moq;
+
+    @Column(length = 120)
+    private String sampleFee;
+
+    @Column(length = 120)
+    private String sampleLeadTime;
+
+    @Column(length = 120)
+    private String massProductionLeadTime;
+
+    @Column(length = 120)
+    private String tradeTerm;
+
+    @Column(length = 160)
+    private String destinationPort;
+
+    @Column(length = 160)
+    private String paymentTerm;
+
+    @Column(columnDefinition = "TEXT")
+    private String packagingRequirement;
+
+    @Column(columnDefinition = "TEXT")
+    private String followUpPlan;
+
+    private LocalDateTime nextFollowUpAt;
+
     @Column(length = 40)
     private String assigneeRole;
 

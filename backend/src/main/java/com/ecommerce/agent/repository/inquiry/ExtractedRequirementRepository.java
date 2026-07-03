@@ -9,5 +9,6 @@ import java.util.List;
 @Repository
 public interface ExtractedRequirementRepository extends JpaRepository<ExtractedRequirement, Long> {
     List<ExtractedRequirement> findByCaseIdOrderByFieldKeyAsc(Long caseId);
+    long countByCaseId(Long caseId);
     void deleteByCaseId(Long caseId);
 }

@@ -26,6 +26,11 @@ public class InquiryReviewController {
         ));
     }
 
+    @GetMapping("/workspace-summary")
+    public ResponseEntity<Map<String, Object>> workspaceSummary(Authentication authentication) {
+        return ResponseEntity.ok(inquiryReviewService.workspaceSummary(ownerKey(authentication), isAdmin(authentication)));
+    }
+
     @PostMapping("/cases")
     public ResponseEntity<Map<String, Object>> createCase(@RequestBody Map<String, Object> body,
                                                           Authentication authentication) {
@@ -234,6 +239,20 @@ public class InquiryReviewController {
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "quoteTaskDraft", inquiryReviewService.saveQuoteTaskDraft(caseId, body)
+        ));
+    }
+
+    @PostMapping("/cases/{caseId}/mark-customer-asked")
+    public ResponseEntity<Map<String, Object>> markCustomerAsked(@PathVariable Long caseId,
+                                                                 @RequestBody Map<String, Object> body,
+                                                                 Authentication authentication) {
+        if (!canAccess(caseId, authentication)) {
+            return ResponseEntity.status(403).body(Map.of("message", "无权修改该询盘案件"));
+        }
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "result", inquiryReviewService.markCustomerAsked(caseId, body),
+                "detail", inquiryReviewService.getCaseDetail(caseId)
         ));
     }
 

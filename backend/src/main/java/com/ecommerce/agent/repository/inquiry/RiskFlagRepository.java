@@ -9,5 +9,7 @@ import java.util.List;
 @Repository
 public interface RiskFlagRepository extends JpaRepository<RiskFlag, Long> {
     List<RiskFlag> findByCaseIdOrderByLevelDesc(Long caseId);
+    long countByCaseId(Long caseId);
+    long countByCaseIdAndLevel(Long caseId, String level);
     void deleteByCaseId(Long caseId);
 }

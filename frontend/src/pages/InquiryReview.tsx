@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertCircle,
+  CalendarClock,
   ClipboardCheck,
   Copy,
   Check,
@@ -11,9 +12,11 @@ import {
   Inbox,
   Loader2,
   MailPlus,
+  PackageCheck,
   Plus,
   RefreshCw,
   Save,
+  Send,
   Trash2,
   Upload,
   X,
@@ -97,6 +100,19 @@ interface QuoteTaskDraft {
   knownInfo: string
   missingInfo: string
   riskSummary: string
+  quoteAssumptions: string
+  productSummary: string
+  moq: string
+  sampleFee: string
+  sampleLeadTime: string
+  massProductionLeadTime: string
+  tradeTerm: string
+  destinationPort: string
+  paymentTerm: string
+  packagingRequirement: string
+  followUpPlan: string
+  nextFollowUpAt: string
+  quoteReadiness?: number
   assigneeRole: string
   emailDraft: string
 }
@@ -110,6 +126,27 @@ interface CaseDetail {
   quoteTaskDraft: QuoteTaskDraft | null
 }
 
+interface WorkspaceTodo {
+  caseId: number
+  caseNo: string
+  caseTitle: string
+  customerName: string
+  status: string
+  type: string
+  priority: string
+  title: string
+  action: string
+  updatedAt: string
+}
+
+interface WorkspaceSummary {
+  funnel: Record<string, number>
+  todos: WorkspaceTodo[]
+  totalCases: number
+  openCases: number
+  highPriorityTodos: number
+}
+
 const statusLabel: Record<string, string> = {
   DRAFT: "草稿",
   REVIEWING: "审查中",
@@ -120,10 +157,31 @@ const statusLabel: Record<string, string> = {
 
 const fieldGroups = ["产品类型", "尺寸", "数量", "材料", "颜色", "包装", "贸易条款", "目的港", "交期", "认证"]
 
+const buildTaskDraftState = (draft?: QuoteTaskDraft | null) => ({
+  taskTitle: draft?.taskTitle || "内部报价任务",
+  knownInfo: draft?.knownInfo || "",
+  missingInfo: draft?.missingInfo || "",
+  riskSummary: draft?.riskSummary || "",
+  quoteAssumptions: draft?.quoteAssumptions || "",
+  productSummary: draft?.productSummary || "",
+  moq: draft?.moq || "",
+  sampleFee: draft?.sampleFee || "",
+  sampleLeadTime: draft?.sampleLeadTime || "",
+  massProductionLeadTime: draft?.massProductionLeadTime || "",
+  tradeTerm: draft?.tradeTerm || "",
+  destinationPort: draft?.destinationPort || "",
+  paymentTerm: draft?.paymentTerm || "",
+  packagingRequirement: draft?.packagingRequirement || "",
+  followUpPlan: draft?.followUpPlan || "",
+  nextFollowUpAt: draft?.nextFollowUpAt ? draft.nextFollowUpAt.slice(0, 16) : "",
+  assigneeRole: draft?.assigneeRole || "SALES",
+})
+
 export default function InquiryReview() {
   const [cases, setCases] = useState<InquiryCase[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detail, setDetail] = useState<CaseDetail | null>(null)
+  const [summary, setSummary] = useState<WorkspaceSummary | null>(null)
   const [loadingCases, setLoadingCases] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -161,12 +219,25 @@ export default function InquiryReview() {
   const [analyzing, setAnalyzing] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [creatingTask, setCreatingTask] = useState(false)
+  const [markingAsked, setMarkingAsked] = useState(false)
   const [emailDraft, setEmailDraft] = useState("")
   const [taskDraft, setTaskDraft] = useState({
     taskTitle: "",
     knownInfo: "",
     missingInfo: "",
     riskSummary: "",
+    quoteAssumptions: "",
+    productSummary: "",
+    moq: "",
+    sampleFee: "",
+    sampleLeadTime: "",
+    massProductionLeadTime: "",
+    tradeTerm: "",
+    destinationPort: "",
+    paymentTerm: "",
+    packagingRequirement: "",
+    followUpPlan: "",
+    nextFollowUpAt: "",
     assigneeRole: "SALES",
   })
   const [error, setError] = useState("")
@@ -174,6 +245,7 @@ export default function InquiryReview() {
 
   const selectedCase = detail?.case
   const hasArtifacts = (detail?.artifacts.length ?? 0) > 0
+  const quoteReadiness = detail?.quoteTaskDraft?.quoteReadiness ?? 0
 
   const completion = useMemo(() => {
     if (!detail) return 0
@@ -203,6 +275,15 @@ export default function InquiryReview() {
     }
   }, [selectedId])
 
+  const fetchSummary = useCallback(async () => {
+    try {
+      const { data } = await api.get("/inquiry-review/workspace-summary")
+      setSummary(data)
+    } catch {
+      setSummary(null)
+    }
+  }, [])
+
   const fetchDetail = useCallback(async (caseId: number) => {
     setLoadingDetail(true)
     setError("")
@@ -210,13 +291,7 @@ export default function InquiryReview() {
       const { data } = await api.get(`/inquiry-review/cases/${caseId}`)
       setDetail(data)
       setEmailDraft(data.quoteTaskDraft?.emailDraft || "")
-      setTaskDraft({
-        taskTitle: data.quoteTaskDraft?.taskTitle || "内部报价任务",
-        knownInfo: data.quoteTaskDraft?.knownInfo || "",
-        missingInfo: data.quoteTaskDraft?.missingInfo || "",
-        riskSummary: data.quoteTaskDraft?.riskSummary || "",
-        assigneeRole: data.quoteTaskDraft?.assigneeRole || "SALES",
-      })
+      setTaskDraft(buildTaskDraftState(data.quoteTaskDraft))
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "获取案件详情失败")
     } finally {
@@ -226,11 +301,18 @@ export default function InquiryReview() {
 
   useEffect(() => {
     fetchCases()
-  }, [fetchCases])
+    fetchSummary()
+  }, [fetchCases, fetchSummary])
 
   useEffect(() => {
     if (selectedId) fetchDetail(selectedId)
   }, [selectedId, fetchDetail])
+
+  const refreshWorkspace = async (caseId = selectedId) => {
+    if (caseId) await fetchDetail(caseId)
+    await fetchCases()
+    await fetchSummary()
+  }
 
   const handleCreateCase = async () => {
     if (creating) return
@@ -240,6 +322,7 @@ export default function InquiryReview() {
       const { data } = await api.post("/inquiry-review/cases", newCase)
       const created = data.detail?.case as InquiryCase
       await fetchCases()
+      await fetchSummary()
       setSelectedId(created.id)
       setDetail(data.detail)
       setNewCaseOpen(false)
@@ -258,8 +341,7 @@ export default function InquiryReview() {
     try {
       await api.post(`/inquiry-review/cases/${selectedId}/artifacts/text`, { title: pasteTitle, text: pasteText })
       setPasteText("")
-      await fetchDetail(selectedId)
-      await fetchCases()
+      await refreshWorkspace(selectedId)
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "保存粘贴资料失败")
     } finally {
@@ -277,8 +359,7 @@ export default function InquiryReview() {
       await api.post(`/inquiry-review/cases/${selectedId}/artifacts`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
-      await fetchDetail(selectedId)
-      await fetchCases()
+      await refreshWorkspace(selectedId)
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "上传资料失败")
     } finally {
@@ -293,7 +374,7 @@ export default function InquiryReview() {
     setError("")
     try {
       await api.put(`/inquiry-review/cases/${selectedId}/quote-task-draft`, { ...taskDraft, emailDraft })
-      await fetchDetail(selectedId)
+      await refreshWorkspace(selectedId)
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "保存草稿失败")
     } finally {
@@ -309,13 +390,7 @@ export default function InquiryReview() {
       const { data } = await api.post(`/inquiry-review/cases/${selectedId}/analyze`)
       setDetail(data.detail)
       setEmailDraft(data.detail?.quoteTaskDraft?.emailDraft || "")
-      setTaskDraft({
-        taskTitle: data.detail?.quoteTaskDraft?.taskTitle || "内部报价任务",
-        knownInfo: data.detail?.quoteTaskDraft?.knownInfo || "",
-        missingInfo: data.detail?.quoteTaskDraft?.missingInfo || "",
-        riskSummary: data.detail?.quoteTaskDraft?.riskSummary || "",
-        assigneeRole: data.detail?.quoteTaskDraft?.assigneeRole || "SALES",
-      })
+      setTaskDraft(buildTaskDraftState(data.detail?.quoteTaskDraft))
       await fetchCases()
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "AI 审查失败")
@@ -469,6 +544,7 @@ export default function InquiryReview() {
       const { data } = await api.put(`/inquiry-review/cases/${selectedId}/status`, { status })
       setDetail((prev) => prev ? { ...prev, case: data.case } : prev)
       await fetchCases()
+      await fetchSummary()
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "更新状态失败")
     }
@@ -482,10 +558,34 @@ export default function InquiryReview() {
       const { data } = await api.post(`/inquiry-review/cases/${selectedId}/create-task`)
       setDetail(data.detail)
       await fetchCases()
+      await fetchSummary()
     } catch (e: any) {
       setError(e.response?.data?.message || e.message || "创建内部任务失败")
     } finally {
       setCreatingTask(false)
+    }
+  }
+
+  const markCustomerAsked = async () => {
+    if (!selectedId || markingAsked) return
+    setMarkingAsked(true)
+    setError("")
+    try {
+      const { data } = await api.post(`/inquiry-review/cases/${selectedId}/mark-customer-asked`, {
+        emailDraft,
+        followUpPlan: taskDraft.followUpPlan,
+        nextFollowUpAt: taskDraft.nextFollowUpAt,
+      })
+      setDetail(data.detail)
+      setEmailDraft(data.detail?.quoteTaskDraft?.emailDraft || emailDraft)
+      setTaskDraft(buildTaskDraftState(data.detail?.quoteTaskDraft))
+      await fetchCases()
+      await fetchSummary()
+      await fetchSummary()
+    } catch (e: any) {
+      setError(e.response?.data?.message || e.message || "记录追问动作失败")
+    } finally {
+      setMarkingAsked(false)
     }
   }
 
@@ -517,6 +617,70 @@ export default function InquiryReview() {
           {error}
         </div>
       )}
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle2 size={16} />
+                今日待办
+              </CardTitle>
+              <Badge variant={summary?.highPriorityTodos ? "destructive" : "secondary"} className="text-[10px]">
+                高优先级 {summary?.highPriorityTodos ?? 0}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!summary?.todos?.length ? (
+              <p className="rounded-[10px] border border-dashed border-[var(--ui-border)] px-4 py-5 text-center text-xs font-semibold text-muted-foreground">
+                暂无待办。当前询盘池没有明显阻塞项。
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                {summary.todos.slice(0, 6).map((todo) => (
+                  <button
+                    key={`${todo.caseId}-${todo.type}-${todo.title}`}
+                    type="button"
+                    onClick={() => setSelectedId(todo.caseId)}
+                    className="rounded-[12px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] p-3 text-left transition-colors hover:border-[var(--ui-border-accent)] hover:bg-[var(--ui-muted)] active:scale-[0.99]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant={todo.priority === "HIGH" ? "destructive" : todo.priority === "MEDIUM" ? "warning" : "secondary"} className="text-[10px]">
+                        {todo.priority}
+                      </Badge>
+                      <span className="text-[10px] font-bold text-muted-foreground">{todo.caseNo}</span>
+                    </div>
+                    <p className="mt-2 text-sm font-black">{todo.title}</p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{todo.action}</p>
+                    <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">{todo.customerName || todo.caseTitle}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>案件漏斗</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2">
+              <Metric label="全部案件" value={String(summary?.totalCases ?? 0)} />
+              <Metric label="开放案件" value={String(summary?.openCases ?? 0)} />
+            </div>
+            <div className="mt-3 grid grid-cols-5 gap-1.5">
+              {["DRAFT", "REVIEWING", "WAITING_CUSTOMER", "READY_TO_QUOTE", "CLOSED"].map((status) => (
+                <div key={status} className="rounded-[9px] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] px-2 py-2 text-center">
+                  <div className="text-sm font-black">{summary?.funnel?.[status] ?? 0}</div>
+                  <div className="mt-1 text-[9px] font-bold text-muted-foreground">{statusLabel[status]}</div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)_380px]">
         <Card className="min-h-[680px]">
@@ -851,13 +1015,21 @@ export default function InquiryReview() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle>英文追问邮件</CardTitle>
-                <Button variant="ghost" size="icon-sm" onClick={copyEmail} disabled={!emailDraft.trim()} title="复制邮件">
-                  <Copy size={14} />
-                </Button>
+                <CardTitle className="flex items-center gap-2">
+                  <MailPlus size={16} />
+                  英文追问邮件
+                </CardTitle>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon-sm" onClick={copyEmail} disabled={!emailDraft.trim()} title="复制邮件">
+                    <Copy size={14} />
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" onClick={markCustomerAsked} disabled={!selectedId || markingAsked || !emailDraft.trim()} title="记录已追问客户">
+                    {markingAsked ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <Textarea
                 value={emailDraft}
                 onChange={(event) => setEmailDraft(event.target.value)}
@@ -865,15 +1037,52 @@ export default function InquiryReview() {
                 className="min-h-[180px]"
                 disabled={!selectedId}
               />
+              <div className="grid grid-cols-1 gap-2">
+                <DraftArea label="跟进计划" value={taskDraft.followUpPlan} onChange={(value) => setTaskDraft((prev) => ({ ...prev, followUpPlan: value }))} disabled={!selectedId} />
+                <div className="space-y-2">
+                  <Label>下次跟进时间</Label>
+                  <Input
+                    type="datetime-local"
+                    value={taskDraft.nextFollowUpAt}
+                    onChange={(event) => setTaskDraft((prev) => ({ ...prev, nextFollowUpAt: event.target.value }))}
+                    disabled={!selectedId}
+                  />
+                </div>
+              </div>
+              <Button className="w-full" variant="outline" onClick={markCustomerAsked} disabled={!selectedId || markingAsked || !emailDraft.trim()}>
+                {markingAsked ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={14} />}
+                已追问客户，进入跟进
+              </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>内部报价任务单</CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2">
+                  <PackageCheck size={16} />
+                  报价准备包
+                </CardTitle>
+                <Badge variant={quoteReadiness >= 70 ? "success" : quoteReadiness >= 40 ? "warning" : "secondary"} className="text-[10px]">
+                  完整度 {quoteReadiness}%
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <Field label="任务标题" value={taskDraft.taskTitle} onChange={(value) => setTaskDraft((prev) => ({ ...prev, taskTitle: value }))} />
+              <DraftArea label="产品/规格摘要" value={taskDraft.productSummary} onChange={(value) => setTaskDraft((prev) => ({ ...prev, productSummary: value }))} disabled={!selectedId} />
+              <DraftArea label="报价假设" value={taskDraft.quoteAssumptions} onChange={(value) => setTaskDraft((prev) => ({ ...prev, quoteAssumptions: value }))} disabled={!selectedId} />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Field label="MOQ" value={taskDraft.moq} onChange={(value) => setTaskDraft((prev) => ({ ...prev, moq: value }))} placeholder="例如：100 sets" />
+                <Field label="样品费" value={taskDraft.sampleFee} onChange={(value) => setTaskDraft((prev) => ({ ...prev, sampleFee: value }))} placeholder="待确认" />
+                <Field label="样品交期" value={taskDraft.sampleLeadTime} onChange={(value) => setTaskDraft((prev) => ({ ...prev, sampleLeadTime: value }))} placeholder="例如：7-10 days" />
+                <Field label="大货交期" value={taskDraft.massProductionLeadTime} onChange={(value) => setTaskDraft((prev) => ({ ...prev, massProductionLeadTime: value }))} placeholder="例如：30-35 days" />
+                <Field label="贸易条款" value={taskDraft.tradeTerm} onChange={(value) => setTaskDraft((prev) => ({ ...prev, tradeTerm: value }))} placeholder="FOB / CIF / DDP" />
+                <Field label="目的港" value={taskDraft.destinationPort} onChange={(value) => setTaskDraft((prev) => ({ ...prev, destinationPort: value }))} placeholder="Los Angeles" />
+                <Field label="付款条款" value={taskDraft.paymentTerm} onChange={(value) => setTaskDraft((prev) => ({ ...prev, paymentTerm: value }))} placeholder="T/T 30% deposit..." />
+                <SelectLine label="协作角色" value={taskDraft.assigneeRole} onChange={(value) => setTaskDraft((prev) => ({ ...prev, assigneeRole: value }))} options={["SALES", "ENGINEERING", "PURCHASING", "MANAGER"]} />
+              </div>
+              <DraftArea label="包装要求" value={taskDraft.packagingRequirement} onChange={(value) => setTaskDraft((prev) => ({ ...prev, packagingRequirement: value }))} disabled={!selectedId} />
               <DraftArea label="已知信息" value={taskDraft.knownInfo} onChange={(value) => setTaskDraft((prev) => ({ ...prev, knownInfo: value }))} disabled={!selectedId} />
               <DraftArea label="缺失信息" value={taskDraft.missingInfo} onChange={(value) => setTaskDraft((prev) => ({ ...prev, missingInfo: value }))} disabled={!selectedId} />
               <DraftArea label="风险摘要" value={taskDraft.riskSummary} onChange={(value) => setTaskDraft((prev) => ({ ...prev, riskSummary: value }))} disabled={!selectedId} />

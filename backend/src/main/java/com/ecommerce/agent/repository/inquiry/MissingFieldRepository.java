@@ -9,5 +9,7 @@ import java.util.List;
 @Repository
 public interface MissingFieldRepository extends JpaRepository<MissingField, Long> {
     List<MissingField> findByCaseIdOrderByPriorityDesc(Long caseId);
+    long countByCaseId(Long caseId);
+    long countByCaseIdAndPriority(Long caseId, String priority);
     void deleteByCaseId(Long caseId);
 }

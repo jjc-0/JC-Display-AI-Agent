@@ -9,5 +9,6 @@ import java.util.List;
 @Repository
 public interface InquiryArtifactRepository extends JpaRepository<InquiryArtifact, Long> {
     List<InquiryArtifact> findByCaseIdOrderByCreatedAtDesc(Long caseId);
+    long countByCaseIdAndParseStatus(Long caseId, String parseStatus);
     void deleteByCaseId(Long caseId);
 }
